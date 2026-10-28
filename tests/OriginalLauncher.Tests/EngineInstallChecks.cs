@@ -6,6 +6,7 @@ using Splat;
 using SS14.Launcher;
 using SS14.Launcher.Models;
 using SS14.Launcher.Models.EngineManager;
+using SS14.Launcher.Utility;
 
 internal static class EngineInstallChecks
 {
