@@ -34,11 +34,11 @@ dotnet run --project tests/EnginePatch.Checks -p:AndroidLauncher=true --   offic
 
 ```bash
 export SDL_VIDEODRIVER=offscreen EGL_PLATFORM=surfaceless ALSOFT_DRIVERS=null
-export SS14_CHECK_CAMERA=1 SS14_CHECK_THUMBSTICK=1
+export SS14_CHECK_INPUT=1 SS14_CHECK_CAMERA=1 SS14_CHECK_THUMBSTICK=1
 dotnet run --project tests/OriginalClient.VisualCheck -p:AndroidLauncher=true --   engine.zip SIGNATURE_HEX public.pem SS14.Client.zip native-dir artifacts/visual
 ```
 
-Камера проверяется через настоящие TouchFinger → InputManager → viewport: масштаб проекции, направление вращения, обратное преобразование координат выбора, сохранение серверного Eye/FOV, отсутствие случайного клика и обычное одиночное нажатие. Тестовая карта/eye создаются только внутри fixture; production-логика не подменяется.
+События отправляются через native `SDL_PushEvent` и проходят штатный SDL event watch → Clyde → GameController → UI/InputManager. Проверяются стик (down/motion/up), настоящая кнопка Options, масштаб проекции, вращение, обратное преобразование выбора, сохранение серверного Eye/FOV, отсутствие случайного клика и обычный tap. Тестовая карта/eye создаются только внутри fixture. Прямой вызов UI.TouchFinger не подходит: он скрывает отсутствие подписки на события, которое вызвало регрессию 0.6.0.
 
 `tests/OriginalClient.Smoke` служит для загрузки модулей и сетевого handshake. `scripts/stage-game-smoke.py` переносит fixture в rooted userdebug-эмулятор; обычному телефону этот способ не нужен и не подходит. Не открывайте приватный игровой Activity наружу ради теста.
 

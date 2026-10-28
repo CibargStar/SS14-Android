@@ -12,7 +12,10 @@ import subprocess
 parser = argparse.ArgumentParser()
 parser.add_argument('--content', type=pathlib.Path, required=True)
 parser.add_argument('--engine-version', default='294.0.1')
+parser.add_argument('--engines', type=pathlib.Path, default=pathlib.Path('artifacts/engines'),
+                    help='Directory containing the signed engine, public key and bundled-manifest.json')
 parser.add_argument('--adb', default='adb')
+parser.add_argument('--max-fps', type=int, default=10, help='Limit rendering load in software emulators')
 parser.add_argument('--connect', help='Optional address of an actual compatible test server')
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -28,9 +31,10 @@ if subprocess.check_output(adb + ['shell', 'id', '-u'], text=True).strip() != '0
     raise SystemExit('This smoke check requires a rooted emulator, not a production device.')
 run('shell', 'am', 'force-stop', 'io.ss14.android')
 run('shell', 'run-as', 'io.ss14.android', 'mkdir', '-p', 'files/integration', 'files/launches')
-engine = root / 'artifacts/engines' / f'Robust.Client.Android-{args.engine_version}.zip'
-public = root / 'artifacts/engines/android-engine-development.pub'
-manifest = json.loads((root / 'artifacts/engines/bundled-manifest.json').read_text())
+engine_dir = args.engines if args.engines.is_absolute() else root / args.engines
+engine = engine_dir / f'Robust.Client.Android-{args.engine_version}.zip'
+public = engine_dir / 'android-engine-development.pub'
+manifest = json.loads((engine_dir / 'bundled-manifest.json').read_text())
 signature = manifest[args.engine_version]['platforms']['android-x64']['sig']
 
 def stage(source, name):
@@ -44,7 +48,7 @@ def stage(source, name):
 engine_path = stage(engine, 'engine.zip')
 key_path = stage(public, 'engine.pub')
 content_path = stage(args.content, 'content.zip')
-engine_args = ['--mount-zip', content_path, '--cvar', 'display.max_fps=30']
+engine_args = ['--mount-zip', content_path, '--cvar', f'display.max_fps={args.max_fps}']
 if args.connect:
     engine_args += ['--connect', '--connect-address', args.connect, '--username', 'AndroidPortTest']
 request = {'Arguments': [engine_path, signature, key_path] + engine_args,

@@ -22,6 +22,7 @@ IEnumerable<object> Descendants(object control)
         foreach (var nested in Descendants(child)) yield return nested;
 }
 float Number(object obj, string name) => Convert.ToSingle(Get(obj, name));
+Vector2 Vector(object obj) => new(Number(obj, "X"), Number(obj, "Y"));
 
 AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
 {
@@ -138,7 +139,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                         Console.WriteLine("INPUT PASS " + name);
                     }
                     var stick = Descendants(overlay).Single(c => c.GetType().Name == "VirtualThumbstick");
-                    var centre = (Vector2)Get(stick, "GlobalPixelPosition")! + (Vector2)Get(stick, "PixelSize")! / 2;
+                    var centre = Vector(Get(stick, "GlobalPixelPosition")!) + Vector(Get(stick, "PixelSize")!) / 2;
                     var inputType = client.GetType("Robust.Client.Input.IInputManager", true)!;
                     var input = Resolve(inputType);
                     var keyType = client.GetType("Robust.Client.Input.Keyboard+Key", true)!;
@@ -151,7 +152,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     Assert(Get(stick, "IsPressed") is false && !Down("W") && !Down("D"), "native SDL finger up releases movement");
                     var menu = Descendants(Get(ui, "RootControl")!).Single(c => c.GetType().Name == "MainMenuControl");
                     var options = Get(menu, "OptionsButton")!;
-                    var point = (Vector2)Get(options, "GlobalPixelPosition")! + (Vector2)Get(options, "PixelSize")! / 2;
+                    var point = Vector(Get(options, "GlobalPixelPosition")!) + Vector(Get(options, "PixelSize")!) / 2;
                     RawTouch("Down", 801, point);
                     RawTouch("Up", 801, point);
                     var window = Descendants(Get(ui, "RootControl")!).SingleOrDefault(c => c.GetType().Name == "OptionsMenu");

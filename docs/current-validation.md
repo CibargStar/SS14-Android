@@ -5,15 +5,17 @@
 | Среда | Подтверждение |
 | --- | --- |
 | Pure .NET | 53 проверки оригинального лаунчера, 67 масштаба/настроек, 36 стика, 28 жестов камеры |
-| Linux offscreen, оригинальный клиент | Подписанный движок загружает и проверяет Content.Client/Shared/Shared.Database; отрисовывает оригинальное меню/настройки; проверены 9 сценариев камеры и интеграция стика через InputManager |
+| Linux offscreen, оригинальный клиент | Подписанный релизный движок: 4 проверки native SDL touch для стика и оригинальной кнопки Options, 9 камеры и 8 поведения стика; оригинальные Content.Client/Shared/Shared.Database и UI |
 | Android-эмулятор, CoreCLR | Исходное главное меню; 3200 RSI и 918 текстур; transport/serializer handshake с внутренним сервером 294.0.1 и состояние Connected |
 | Samsung S25 Ultra | Пользователь подтвердил вход из хаба в игру. Версия сервера и длительность сессии не зафиксированы |
 | GitHub Actions | Сборки ARM64/x64; матрица точных движков; SHA-256 и Ed25519 перед публикацией движков; SHA-256, APK-сертификат и engine key перед публикацией APK |
 
 В Linux-стенде сериализация оригинального контента сохранила hash `8E31801C357F2F7DB888F10EDC878803DAA3CD678D7E5DBA912584BDCD3C9AEC` после изменений сенсорного ввода.
 
-Новые жесты проверены в настоящем движке на Linux: увеличение проекции, поворот в сторону пальцев, выбор объектов после преобразования, сохранение исходного Eye/FOV/light, отсутствие клика во время жеста и обычный tap. Полноэкранный код включён в Android-сборку. Проверка этих изменений на физическом S25 Ultra остаётся задачей тестового релиза.
+В 0.6.0 проверка вызывала UI.TouchFinger напрямую и пропустила отсутствие подписки на событие Clyde.TouchFinger. На Android это отключило весь сенсорный ввод после запрета SDL-эмуляции мыши. В 0.6.1 подписка восстановлена в GameController; тест отправляет события через native SDL_PushEvent и штатную цепочку доставки. Старый пакет воспроизводит ошибку, исправленный проходит проверки стика, кнопки и камеры.
 
-Релиз [0.6.0-dev](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.6.0-dev): [матрица 16 движков](https://github.com/CibargStar/SS14-Android/actions/runs/40756735979), [host ARM64](https://github.com/CibargStar/SS14-Android/actions/runs/40755818695), [host x64](https://github.com/CibargStar/SS14-Android/actions/runs/40755825008), [проверка и публикация APK](https://github.com/CibargStar/SS14-Android/actions/runs/40759076030). Опубликованные SHA-256 и размеры обоих APK сверены с локальными подписанными файлами.
+Релиз [0.6.1-dev](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.6.1-dev): [матрица 16 движков](https://github.com/CibargStar/SS14-Android/actions/runs/40762331401), [host ARM64](https://github.com/CibargStar/SS14-Android/actions/runs/40762339275), [host x64](https://github.com/CibargStar/SS14-Android/actions/runs/40762346436), [проверка и публикация APK](https://github.com/CibargStar/SS14-Android/actions/runs/40765432214). Опубликованные SHA-256 и размеры обоих APK сверены с локальными подписанными файлами.
+
+APK 0.6.1 установлен поверх предыдущей сборки в Android-эмуляторе API 30; SDL/GLES и IL-проверка трёх оригинальных модулей работают. Проверка касаний после загрузки ещё не завершена. Новый APK на физическом S25 Ultra пока не проверен.
 
 Конкретные команды приведены в [testing.md](testing.md). Релизные notes фиксируют версии и источники соответствующего бинарника. Известные незавершённые области: [compatibility.md](compatibility.md).
