@@ -1,5 +1,7 @@
 # Порт оригинального SS14.Launcher
 
+> Эта запись описывает раннюю сборку 0.2.0-dev. Последующие проверки оригинального загрузчика и игры, исправления Android и оставшиеся задачи: [current-validation.md](current-validation.md).
+
 Требование пользователя: адаптировать существующее приложение и сохранить его функции; не создавать похожий интерфейс с нуля. Самописный хаб 0.1.0-dev выведен из основного проекта и оставлен в experiments.
 
 Официальный upstream: https://github.com/space-wizards/SS14.Launcher, commit 18fa9830576023595bffb417b0eaeb929fee5934. В основной APK включается сборка SS14.Launcher с его XAML, ресурсами, моделями, авторизацией, ServerListCache, ContentManager, Updater и EngineManagerDynamic. ProjectReference на бывший Launcher.Core удалён.

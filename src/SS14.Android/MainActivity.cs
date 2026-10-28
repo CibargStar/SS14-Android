@@ -15,7 +15,7 @@ using SS14.Launcher.Models;
 [assembly: UsesPermission(Android.Manifest.Permission.Internet)]
 [assembly: UsesPermission(Android.Manifest.Permission.AccessNetworkState)]
 [assembly: UsesPermission(Android.Manifest.Permission.RequestInstallPackages)]
-[assembly: Application(UsesCleartextTraffic = true, AllowBackup = false, Label = "Space Station 14")]
+[assembly: Application(UsesCleartextTraffic = true, AllowBackup = false, LargeHeap = true, Label = "Space Station 14")]
 
 namespace SS14.Android;
 

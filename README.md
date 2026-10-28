@@ -102,4 +102,4 @@ adb exec-out run-as io.ss14.runtimeprobe cat files/runtime-probe-result.json
 
 Каждый запуск оставляет загруженные assembly contexts до завершения процесса. Это намеренно короткоживущий диагностический процесс. Стенд проверяет один NetSerializer round-trip; он не проверяет полный wire format SS14, выгрузку движка, SDL/OpenGL, P/Invoke, Robust sandbox, сетевой handshake или игровой контент.
 
-Требования и этапы: [docs/architecture.md](docs/architecture.md). Проверенные результаты: [docs/validation.md](docs/validation.md).
+Требования и этапы: [docs/architecture.md](docs/architecture.md). Актуальные проверенные результаты: [docs/current-validation.md](docs/current-validation.md).

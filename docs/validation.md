@@ -1,4 +1,4 @@
-> Обновление: основной Android host теперь портирует оригинальный SS14.Launcher. Самописный хаб ниже — предыдущий эксперимент 0.1.0-dev. Актуальное состояние: [original-launcher-port.md](original-launcher-port.md).
+> Историческая запись начального этапа. Основной Android host теперь портирует оригинальные SS14.Launcher и SS14.Loader. Самописный хаб ниже — предыдущий эксперимент 0.1.0-dev. Актуальные проверки: [current-validation.md](current-validation.md).
 
 # Проверки
 
