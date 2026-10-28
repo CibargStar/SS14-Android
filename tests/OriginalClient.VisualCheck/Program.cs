@@ -146,6 +146,10 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     var stateRoot = Get(ui, "StateRoot")!;
                     stateRoot.GetType().GetProperty("Visible")!.SetValue(stateRoot, false);
                     var viewport = Get(ui, "MainViewport")!;
+                    var available = (Vector2)Get(Get(ui, "RootControl")!, "Size")!;
+                    viewport.GetType().GetMethod("Measure")!.Invoke(viewport, [available]);
+                    var arrange = viewport.GetType().GetMethod("Arrange")!;
+                    arrange.Invoke(viewport, [Activator.CreateInstance(arrange.GetParameters()[0].ParameterType, [Vector2.Zero, available])]);
                     Get(viewport, "Viewport")!.GetType().GetProperty("Eye")!.SetValue(Get(viewport, "Viewport"), eye);
                     var viewportInterface = client.GetType("Robust.Client.UserInterface.CustomControls.IViewportControl", true)!;
                     var clyde = Resolve(clydeType);

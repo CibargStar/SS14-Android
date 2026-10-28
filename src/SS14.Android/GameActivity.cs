@@ -45,7 +45,7 @@ public sealed class GameActivity : SDLActivity
         var controller = WindowCompat.GetInsetsController(window, window.DecorView);
         controller.SystemBarsBehavior = WindowInsetsControllerCompat.BehaviorShowTransientBarsBySwipe;
         controller.Hide(WindowInsetsCompat.Type.SystemBars());
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.P && window.Attributes is { } attributes)
+        if (OperatingSystem.IsAndroidVersionAtLeast(28) && window.Attributes is { } attributes)
         {
             attributes.LayoutInDisplayCutoutMode = LayoutInDisplayCutoutMode.ShortEdges;
             window.Attributes = attributes;
