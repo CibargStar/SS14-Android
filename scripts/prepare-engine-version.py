@@ -78,6 +78,16 @@ if 'RawCode' not in events:
     if original.count(needle) != 2:
         raise SystemExit('Unrecognized oldest input API; manual port review is required.')
     input_path.write_text(original.replace(needle, ')'))
+# Keep the original protocol/API while applying the same ImageSharp security
+# patch level used by the latest upstream engine. Do not disable NuGet auditing.
+packages = destination / 'Directory.Packages.props'
+if packages.exists():
+    original = packages.read_text(encoding='utf-8-sig')
+    def image_version(match):
+        current = tuple(map(int, match.group(1).split('.')))
+        return match.group(0).replace(match.group(1), '3.1.12') if current < (3, 1, 12) and current[:2] == (3, 1) else match.group(0)
+    patched = re.sub(r'<PackageVersion Include="SixLabors.ImageSharp" Version="([0-9.]+)"', image_version, original)
+    if patched != original: packages.write_text(patched)
 git(destination, 'add', '-N', '--', 'Robust.Client/Input/TouchFingerEventArgs.cs',
     'Robust.Client/UserInterface/Mobile')
 marker.write_text(json.dumps(state(), indent=2) + '\n')

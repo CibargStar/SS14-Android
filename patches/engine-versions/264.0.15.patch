@@ -974,7 +974,7 @@ index 0000000..c139d8f
 +    }
 +}
 diff --git a/Robust.Client/ResourceManagement/ResourceCache.Preload.cs b/Robust.Client/ResourceManagement/ResourceCache.Preload.cs
-index febfb97..4dde589 100644
+index febfb97..be2dd13 100644
 --- a/Robust.Client/ResourceManagement/ResourceCache.Preload.cs
 +++ b/Robust.Client/ResourceManagement/ResourceCache.Preload.cs
 @@ -209,7 +209,9 @@ namespace Robust.Client.ResourceManagement
@@ -983,7 +983,7 @@ index febfb97..4dde589 100644
  
 -            var maxSize = Math.Min(GL.GetInteger(GetPName.MaxTextureSize), _configurationManager.GetCVar(CVars.ResRSIAtlasSize));
 +            var maxSize = _configurationManager.GetCVar(CVars.ResRSIAtlasSize);
-+            if (_clyde is not ClydeHeadless)
++            if (IoCManager.Resolve<IClyde>() is not global::Robust.Client.Graphics.Clyde.ClydeHeadless)
 +                maxSize = Math.Min(GL.GetInteger(GetPName.MaxTextureSize), maxSize);
  
              // THIS IS NOT GUARANTEED TO HAVE ANY PARTICULARLY LOGICAL ORDERING.
@@ -2330,10 +2330,10 @@ index 0000000..b4e80f4
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/PojavActionButton.cs b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
 new file mode 100644
-index 0000000..24fb831
+index 0000000..76ca27d
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
-@@ -0,0 +1,370 @@
+@@ -0,0 +1,371 @@
 +using System;
 +using System.Numerics;
 +using Robust.Client.Graphics;
@@ -2668,13 +2668,14 @@ index 0000000..24fb831
 +    {
 +        base.Draw(handle);
 +
-+        var center = Size / 2f;
-+        var radius = MathF.Min(Size.X, Size.Y) / 2f - 1.5f;
++        // DrawingHandleScreen uses pixels; control input/layout uses UI units.
++        var center = (Vector2)PixelSize / 2f;
++        var radius = MathF.Min(PixelSize.X, PixelSize.Y) / 2f - 1.5f;
 +        var active = _isPressed || IsToggled;
 +
 +        var bg = active
 +            ? new Color(AccentColor.R, AccentColor.G, AccentColor.B, 0.78f)
-+            : new Color(18, 22, 32, 0.72f);
++            : new Color(18, 22, 32).WithAlpha(0.72f);
 +
 +        var border = IsEditMode
 +            ? new Color(255, 215, 0, 240)
@@ -2693,23 +2694,23 @@ index 0000000..24fb831
 +        if (IsToggle && IsToggled)
 +        {
 +            var badgePos = center + new Vector2(radius * 0.6f, -radius * 0.6f);
-+            handle.DrawCircle(badgePos, 4f, Color.White, true);
-+            handle.DrawCircle(badgePos, 2.5f, new Color(46, 204, 113), true);
++            handle.DrawCircle(badgePos, 4f * UIScale, Color.White, true);
++            handle.DrawCircle(badgePos, 2.5f * UIScale, new Color(46, 204, 113), true);
 +        }
 +
 +        if (IsEditMode)
 +        {
-+            var box = UIBox2.FromDimensions(Vector2.Zero, Size);
++            var box = UIBox2.FromDimensions(Vector2.Zero, PixelSize);
 +            handle.DrawRect(box, new Color(255, 215, 0, 140), false);
 +        }
 +    }
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
 new file mode 100644
-index 0000000..de364da
+index 0000000..89dfea6
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
-@@ -0,0 +1,315 @@
+@@ -0,0 +1,317 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Numerics;
@@ -2967,13 +2968,15 @@ index 0000000..de364da
 +    {
 +        base.Draw(handle);
 +
-+        var center = Size / 2f;
++        var scale = UIScale;
++        var center = (Vector2)PixelSize / 2f;
++        var radius = Radius * scale;
 +
-+        handle.DrawCircle(center, Radius, new Color(15, 15, 15, 150), true);
++        handle.DrawCircle(center, radius, new Color(15, 15, 15, 150), true);
 +        var baseBorder = IsEditMode ? new Color(255, 215, 0, 240) : new Color(240, 240, 240, 200);
-+        handle.DrawCircle(center, Radius, baseBorder, false);
++        handle.DrawCircle(center, radius, baseBorder, false);
 +
-+        handle.DrawCircle(center, Radius * 0.55f, new Color(255, 255, 255, 25), false);
++        handle.DrawCircle(center, radius * 0.55f, new Color(255, 255, 255, 25), false);
 +
 +        var wActive = _activeKeys.Contains(Keyboard.Key.W);
 +        var sActive = _activeKeys.Contains(Keyboard.Key.S);
@@ -2983,11 +2986,11 @@ index 0000000..de364da
 +        var activeColor = new Color(255, 225, 60, 255);
 +        var inactiveColor = new Color(255, 255, 255, 140);
 +
-+        var dotRadius = Radius - 10f;
-+        handle.DrawCircle(center + new Vector2(0, -dotRadius), wActive ? 6.5f : 4f, wActive ? activeColor : inactiveColor, true);
-+        handle.DrawCircle(center + new Vector2(0, dotRadius), sActive ? 6.5f : 4f, sActive ? activeColor : inactiveColor, true);
-+        handle.DrawCircle(center + new Vector2(-dotRadius, 0), aActive ? 6.5f : 4f, aActive ? activeColor : inactiveColor, true);
-+        handle.DrawCircle(center + new Vector2(dotRadius, 0), dActive ? 6.5f : 4f, dActive ? activeColor : inactiveColor, true);
++        var dotRadius = (Radius - 10f) * scale;
++        handle.DrawCircle(center + new Vector2(0, -dotRadius), (wActive ? 6.5f : 4f) * scale, wActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(0, dotRadius), (sActive ? 6.5f : 4f) * scale, sActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(-dotRadius, 0), (aActive ? 6.5f : 4f) * scale, aActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(dotRadius, 0), (dActive ? 6.5f : 4f) * scale, dActive ? activeColor : inactiveColor, true);
 +
 +        var diagOffset = dotRadius * 0.7071f;
 +        var wdActive = wActive && dActive;
@@ -2995,32 +2998,32 @@ index 0000000..de364da
 +        var sdActive = sActive && dActive;
 +        var saActive = sActive && aActive;
 +
-+        handle.DrawCircle(center + new Vector2(diagOffset, -diagOffset), wdActive ? 6.5f : 3f, wdActive ? activeColor : inactiveColor, true);
-+        handle.DrawCircle(center + new Vector2(-diagOffset, -diagOffset), waActive ? 6.5f : 3f, waActive ? activeColor : inactiveColor, true);
-+        handle.DrawCircle(center + new Vector2(diagOffset, diagOffset), sdActive ? 6.5f : 3f, sdActive ? activeColor : inactiveColor, true);
-+        handle.DrawCircle(center + new Vector2(-diagOffset, diagOffset), saActive ? 6.5f : 3f, saActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(diagOffset, -diagOffset), (wdActive ? 6.5f : 3f) * scale, wdActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(-diagOffset, -diagOffset), (waActive ? 6.5f : 3f) * scale, waActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(diagOffset, diagOffset), (sdActive ? 6.5f : 3f) * scale, sdActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(-diagOffset, diagOffset), (saActive ? 6.5f : 3f) * scale, saActive ? activeColor : inactiveColor, true);
 +
-+        handle.DrawCircle(center, 5f, new Color(255, 255, 255, 90), true);
++        handle.DrawCircle(center, 5f * scale, new Color(255, 255, 255, 90), true);
 +
 +        if (_isPressed && _knobOffset.LengthSquared() > 9f)
 +        {
-+            handle.DrawLine(center, center + _knobOffset, new Color(255, 255, 255, 140));
++            handle.DrawLine(center, center + _knobOffset * scale, new Color(255, 255, 255, 140));
 +        }
 +
-+        var knobCenter = center + _knobOffset;
++        var knobCenter = center + _knobOffset * scale;
 +        var knobBg = _isPressed
 +            ? new Color(255, 255, 255, 235)
 +            : new Color(210, 210, 210, 185);
 +
 +        var knobBorder = Color.White;
 +
-+        handle.DrawCircle(knobCenter, KnobRadius, knobBg, true);
-+        handle.DrawCircle(knobCenter, KnobRadius, knobBorder, false);
-+        handle.DrawCircle(knobCenter, 6f, new Color(30, 30, 30, 220), true);
++        handle.DrawCircle(knobCenter, KnobRadius * scale, knobBg, true);
++        handle.DrawCircle(knobCenter, KnobRadius * scale, knobBorder, false);
++        handle.DrawCircle(knobCenter, 6f * scale, new Color(30, 30, 30, 220), true);
 +
 +        if (IsEditMode)
 +        {
-+            var box = UIBox2.FromDimensions(Vector2.Zero, Size);
++            var box = UIBox2.FromDimensions(Vector2.Zero, PixelSize);
 +            handle.DrawRect(box, new Color(255, 215, 0, 150), false);
 +        }
 +    }
