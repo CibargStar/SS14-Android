@@ -6,7 +6,7 @@ on:
       tag:
         description: Test APK release tag
         type: string
-        default: android-host-0.5.0-dev
+        default: android-host-0.6.0-dev
 
 permissions:
   contents: write
@@ -54,5 +54,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --title "SS14 Android test: $RELEASE_TAG" --notes-file staging/notes.md
-          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber staging/output/*.apk
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease --latest=false --title "SS14 Android test: $RELEASE_TAG" --notes-file staging/notes.md
+          (cd staging/output && sha256sum *.apk) > staging/output/SHA256SUMS
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" staging/output/*.apk staging/output/SHA256SUMS
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false

@@ -6,7 +6,7 @@ on:
       tag:
         description: Immutable engine release tag
         type: string
-        default: android-engines-20261028-2
+        default: android-engines-20261028-5
 
 permissions:
   contents: write
@@ -43,5 +43,6 @@ jobs:
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease --title "Signed Android engines: $RELEASE_TAG" --notes-file staging/notes.md
           shopt -s nullglob
           payloads=(staging/Robust.Client.Android-*.zip staging/Robust.Client.Android-*.zip.sig staging/Robust.Client.Android-*.ss14patch staging/Robust.Client.Android-*.ss14patch.sig)
-          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "${payloads[@]}"
+          (cd staging && sha256sum Robust.Client.Android-*.zip Robust.Client.Android-*.zip.sig Robust.Client.Android-*.ss14patch Robust.Client.Android-*.ss14patch.sig) > staging/SHA256SUMS
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "${payloads[@]}" staging/SHA256SUMS
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
