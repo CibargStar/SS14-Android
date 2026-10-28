@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../upstream/SS14.Launcher/SS14.Launcher/Models/EngineManager/EngineBinaryPatch.cs" Link="EngineBinaryPatch.cs" />
+  </ItemGroup>
+</Project>

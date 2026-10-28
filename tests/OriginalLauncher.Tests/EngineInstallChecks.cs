@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using NSec.Cryptography;
+using Splat;
 using SS14.Launcher;
 using SS14.Launcher.Models;
 using SS14.Launcher.Models.EngineManager;
@@ -98,6 +100,59 @@ internal static class EngineInstallChecks
         check(repairRejected && File.ReadAllBytes(enginePath).SequenceEqual(updatedPayload) &&
               repairedManager.GetEngineSignature("0.0.1001") == updatedSignature,
             "corrupt platform repair preserves the working engine and stored signature");
+        var cfg = Locator.Current.GetRequiredService<SS14.Launcher.Models.Data.DataManager>();
+        cfg.SetCVar(SS14.Launcher.Models.Data.CVars.AndroidEnginePatching, true);
+        var originalPayload = "authentic original desktop engine fixture"u8.ToArray();
+        var originalHash = Convert.ToHexString(SHA256.HashData(originalPayload));
+        var originalSignature = Convert.ToHexString(SignatureAlgorithm.Ed25519.Sign(key, originalPayload));
+        var patchedPayload = "authentic Android port fixture"u8.ToArray();
+        var patchedHash = Convert.ToHexString(SHA256.HashData(patchedPayload));
+        var patchedSignature = Convert.ToHexString(SignatureAlgorithm.Ed25519.Sign(key, patchedPayload));
+        foreach (var (patchVersion, badSource, badDelta) in new[] {
+                     ("0.0.1004", false, false), ("0.0.1005", true, false), ("0.0.1006", false, true) })
+        {
+            using var deltaOutput = new MemoryStream();
+            using (var writer = new BinaryWriter(deltaOutput, Encoding.UTF8, true))
+            {
+                var header = JsonSerializer.SerializeToUtf8Bytes(new { format = 1, version = patchVersion,
+                    sourceSha256 = originalHash, targetSha256 = patchedHash, targetLength = patchedPayload.Length });
+                writer.Write("SS14DP01"u8);
+                writer.Write(header.Length);
+                writer.Write(header);
+                writer.Write((byte)1);
+                writer.Write((long)patchedPayload.Length);
+                writer.Write(patchedPayload);
+                writer.Write((byte)255);
+            }
+            var deltaBytes = deltaOutput.ToArray();
+            var deltaHash = Convert.ToHexString(SHA256.HashData(deltaBytes));
+            var deltaSignature = Convert.ToHexString(SignatureAlgorithm.Ed25519.Sign(key, deltaBytes));
+            var patchInfo = new EnginePatchInfo("https://fixture/original", originalHash,
+                badSource ? new string('0', 128) : originalSignature, "https://fixture/delta", deltaHash,
+                badDelta ? new string('0', 128) : deltaSignature);
+            var patchedManifest = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object> {
+                [patchVersion] = new { insecure = false, platforms = new Dictionary<string, object> {
+                    [rid] = new { url = "https://fixture/full", sha256 = patchedHash, sig = patchedSignature, patch = patchInfo } } } });
+            LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(patchedManifest));
+            LauncherMobile.OpenEnginePayload = (url, _) => Task.FromResult<Stream>(new MemoryStream(url switch {
+                "https://fixture/original" => originalPayload,
+                "https://fixture/delta" => deltaBytes,
+                _ => throw new Exception("Experimental patch unexpectedly downloaded the full Android package.") }));
+            var patchManager = new EngineManagerDynamic();
+            var rejected = false;
+            try { await patchManager.DownloadEngineIfNecessary(patchVersion); }
+            catch (CryptographicException) { rejected = true; }
+            if (badSource || badDelta)
+                check(rejected && !File.Exists(Path.Combine(LauncherPaths.DirEngineInstallations, patchVersion + ".zip")),
+                    "patch installer rejects unauthenticated " + (badSource ? "original engine" : "Android patch"));
+            else
+                check(!rejected && File.ReadAllBytes(patchManager.GetEnginePath(patchVersion)).SequenceEqual(patchedPayload) &&
+                      patchManager.GetEngineSignature(patchVersion) == patchedSignature,
+                    "original signed engine + signed patch installs exact signed Android engine");
+        }
+        cfg.SetCVar(SS14.Launcher.Models.Data.CVars.AndroidEnginePatching, false);
+        check(!Directory.EnumerateFiles(LauncherPaths.DirEngineInstallations, "*.tmp").Any(),
+            "failed experimental patches leave no temporary engine installation");
         LauncherMobile.OpenEngineManifest = null;
         LauncherMobile.OpenEnginePayload = null;
     }

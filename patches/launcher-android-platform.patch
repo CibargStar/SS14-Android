@@ -125,25 +125,29 @@ index 214def3..851c2fd 100644
  
      private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
 diff --git a/SS14.Launcher/Assets/Locale/en-US/text.ftl b/SS14.Launcher/Assets/Locale/en-US/text.ftl
-index ad61969..9575cfa 100644
+index ad61969..234103b 100644
 --- a/SS14.Launcher/Assets/Locale/en-US/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/en-US/text.ftl
-@@ -34,6 +34,7 @@ connecting-status-update-error =
+@@ -34,6 +34,9 @@ connecting-status-update-error =
  connecting-status-update-error-no-engine-for-platform = This server is using an older game engine version that does not support your current platform. Please try another server or inform the server staff about this and try again later.
  connecting-status-update-error-no-module-for-platform = This server requires additional functionality that is not yet supported on your current platform. Please try another server or inform the server staff about this and try again later.
  connecting-status-update-error-unknown = Unknown
++tab-options-android-engine-patching = Experimental engine patching
++tab-options-android-engine-patching-desc = For versions with a prepared patch, download the original engine and adapt it on this device. Source, patch and output signatures are verified. Downloads can be larger. Other versions use normal installation.
 +connecting-status-update-error-android-engine-unavailable = This server requires engine { $version }. A matching Android build is not yet available in the catalog. This is a limitation of the current port; the game connection has not started.
  connecting-status-updating = Updating: { $status }
  connecting-status-connecting = Fetching connection info from server…
  connecting-status-connection-failed = Failed to connect to server!
 diff --git a/SS14.Launcher/Assets/Locale/ru/text.ftl b/SS14.Launcher/Assets/Locale/ru/text.ftl
-index e81f9f2..352ea00 100644
+index e81f9f2..867168c 100644
 --- a/SS14.Launcher/Assets/Locale/ru/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/ru/text.ftl
-@@ -547,6 +547,7 @@ server-entry-round-time =
+@@ -547,6 +547,9 @@ server-entry-round-time =
      }
  tab-servers-table-round-time = Время
  connecting-status-update-error-unknown = Неизвестно
++tab-options-android-engine-patching = Экспериментальный автопатч движка
++tab-options-android-engine-patching-desc = Для версий с подготовленным патчем скачивает оригинальный движок и адаптирует его на устройстве. Подписи исходника, патча и результата проверяются. Загрузка может быть больше обычной. Остальные версии устанавливаются обычным способом.
 +connecting-status-update-error-android-engine-unavailable = Серверу требуется движок { $version }. В каталоге Android пока нет подходящей сборки. Это ограничение текущего порта; подключение к игре ещё не началось.
  server-entry-status-lobby = Лобби
  connecting-status-update-error-no-engine-for-platform = Эта игра использует более старую версию, которая не поддерживается вашей текущей платформой. Попробуйте другой сервер или подключитесь позже.
@@ -315,6 +319,19 @@ index 94960ca..960a01f 100644
  
          void EnvVar(string envVar, string? value)
          {
+diff --git a/SS14.Launcher/Models/Data/CVars.cs b/SS14.Launcher/Models/Data/CVars.cs
+index b781836..09f2ee2 100644
+--- a/SS14.Launcher/Models/Data/CVars.cs
++++ b/SS14.Launcher/Models/Data/CVars.cs
+@@ -21,6 +21,8 @@ public static class CVars
+     /// </summary>
+     public static readonly CVarDef<bool> CompatMode = CVarDef.Create("CompatMode", false);
+ 
++    public static readonly CVarDef<bool> AndroidEnginePatching = CVarDef.Create("AndroidEnginePatching", false);
++
+     /// <summary>
+     /// On first launch, the launcher tells you that SS14 is EARLY ACCESS.
+     /// This stores whether they dismissed that, though people will insist on pretending it defaults to true.
 diff --git a/SS14.Launcher/Models/Data/DataManager.cs b/SS14.Launcher/Models/Data/DataManager.cs
 index 7f5f26e..669f884 100644
 --- a/SS14.Launcher/Models/Data/DataManager.cs
@@ -337,8 +354,105 @@ index 7f5f26e..669f884 100644
              try
              {
                  using var connection = new SqliteConnection(GetCfgDbConnectionString());
+diff --git a/SS14.Launcher/Models/EngineManager/EngineBinaryPatch.cs b/SS14.Launcher/Models/EngineManager/EngineBinaryPatch.cs
+new file mode 100644
+index 0000000..07cb7b4
+--- /dev/null
++++ b/SS14.Launcher/Models/EngineManager/EngineBinaryPatch.cs
+@@ -0,0 +1,91 @@
++using System;
++using System.IO;
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace SS14.Launcher.Models.EngineManager;
++
++// Deterministic data-only delta. It never executes scripts, loads an assembly or
++// extracts paths. Both input packages must be authenticated before calling this;
++// the existing installer authenticates the complete generated engine afterward.
++public static class EngineBinaryPatch
++{
++    private sealed record Header(int Format, string Version, string SourceSha256,
++        string TargetSha256, long TargetLength);
++
++    public static async Task Apply(Stream source, Stream delta, Stream target,
++        string version, string expectedHash, CancellationToken cancel = default)
++    {
++        using var reader = new BinaryReader(delta, Encoding.UTF8, leaveOpen: true);
++        if (!reader.ReadBytes(8).AsSpan().SequenceEqual("SS14DP01"u8))
++            throw new InvalidDataException("Unknown Android engine patch format.");
++        var headerLength = reader.ReadInt32();
++        if (headerLength is <= 0 or > 65536)
++            throw new InvalidDataException("Invalid Android engine patch header.");
++        var header = JsonSerializer.Deserialize<Header>(reader.ReadBytes(headerLength),
++            new JsonSerializerOptions(JsonSerializerDefaults.Web))
++            ?? throw new InvalidDataException("Empty Android engine patch header.");
++        if (header.Format != 1 || header.Version != version ||
++            header.TargetLength is <= 0 or > 512L * 1024 * 1024 ||
++            !string.Equals(header.TargetSha256, expectedHash, StringComparison.OrdinalIgnoreCase))
++            throw new InvalidDataException("Android engine patch does not match the requested build.");
++        source.Position = 0;
++        if (!CryptographicOperations.FixedTimeEquals(await SHA256.HashDataAsync(source, cancel),
++                Convert.FromHexString(header.SourceSha256)))
++            throw new CryptographicException("Android engine patch source hash mismatch.");
++        var buffer = new byte[64 * 1024];
++        var written = 0L;
++        for (var operation = 0; operation < 100000; operation++)
++        {
++            cancel.ThrowIfCancellationRequested();
++            var code = reader.ReadByte();
++            if (code == 255)
++            {
++                if (written != header.TargetLength || delta.ReadByte() != -1)
++                    throw new InvalidDataException("Android engine patch length mismatch.");
++                await target.FlushAsync(cancel);
++                target.Position = 0;
++                if (!CryptographicOperations.FixedTimeEquals(await SHA256.HashDataAsync(target, cancel),
++                        Convert.FromHexString(expectedHash)))
++                    throw new CryptographicException("Generated Android engine hash mismatch.");
++                target.Position = 0;
++                return;
++            }
++            Stream input;
++            long length;
++            if (code == 0)
++            {
++                var offset = reader.ReadInt64();
++                length = reader.ReadInt64();
++                if (offset < 0 || length <= 0 || length > source.Length || offset > source.Length - length)
++                    throw new InvalidDataException("Android engine patch copy is outside its source.");
++                source.Position = offset;
++                input = source;
++            }
++            else if (code == 1)
++            {
++                length = reader.ReadInt64();
++                input = delta;
++            }
++            else throw new InvalidDataException("Unknown Android engine patch operation.");
++            if (length <= 0 || length > header.TargetLength - written)
++                throw new InvalidDataException("Android engine patch exceeds its output limit.");
++            var remaining = length;
++            while (remaining > 0)
++            {
++                var read = await input.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), cancel);
++                if (read == 0) throw new EndOfStreamException("Truncated Android engine patch.");
++                await target.WriteAsync(buffer.AsMemory(0, read), cancel);
++                remaining -= read;
++            }
++            written += length;
++        }
++        throw new InvalidDataException("Too many Android engine patch operations.");
++    }
++}
++
++public sealed record EnginePatchInfo(string SourceUrl, string SourceSha256, string SourceSignature,
++    string Url, string Sha256, string Signature);
 diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
-index 7b217fd..6b997b6 100644
+index 7b217fd..5e025c4 100644
 --- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
 +++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
 @@ -1,4 +1,4 @@
@@ -385,8 +499,17 @@ index 7b217fd..6b997b6 100644
              }
          }
  
+@@ -113,5 +126,8 @@ public sealed partial class EngineManagerDynamic
+ 
+         [JsonInclude] [JsonPropertyName("sig")]
+         public string Signature = default!;
++
++        [JsonInclude] [JsonPropertyName("patch")]
++        public EnginePatchInfo? Patch;
+     }
+ }
 diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
-index c1e6c78..68c2354 100644
+index c1e6c78..4d28435 100644
 --- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 +++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 @@ -5,6 +5,7 @@ using System.IO.MemoryMappedFiles;
@@ -433,7 +556,7 @@ index c1e6c78..68c2354 100644
              throw new NoEngineForPlatformException("No engine version available for our platform!");
          }
  
-@@ -115,25 +119,54 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+@@ -115,31 +119,103 @@ public sealed partial class EngineManagerDynamic : IEngineManager
  
          var buildInfo = foundVersion.Info.Platforms[bestRid];
  
@@ -471,7 +594,20 @@ index c1e6c78..68c2354 100644
 +            await using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite,
 +                FileShare.None, 4096, FileOptions.Asynchronous))
 +            {
-+                if (LauncherMobile.OpenEnginePayload is { } openPayload)
++                if (LauncherMobile.OpenEnginePayload != null && _cfg.GetCVar(CVars.AndroidEnginePatching) &&
++                    buildInfo.Patch is { } patch)
++                {
++                    Log.Information("Applying verified Android engine patch for {Version}", foundVersion.Version);
++                    await using var original = TempFile.CreateTempFile();
++                    await using var delta = TempFile.CreateTempFile();
++                    await DownloadVerifiedPatchInput(patch.SourceUrl, patch.SourceSha256, patch.SourceSignature,
++                        Path.Combine(LauncherPaths.DirLauncherInstall, "signing_key"), original, cancel);
++                    await DownloadVerifiedPatchInput(patch.Url, patch.Sha256, patch.Signature,
++                        LauncherPaths.PathPublicKey, delta, cancel);
++                    await EngineBinaryPatch.Apply(original, delta, file, foundVersion.Version, buildInfo.Sha256, cancel);
++                    progress?.Invoke(file.Length, file.Length);
++                }
++                else if (LauncherMobile.OpenEnginePayload is { } openPayload)
 +                {
 +                    await using var source = await openPayload(buildInfo.Url, cancel);
 +                    await source.CopyToAsync(file, cancel);
@@ -499,6 +635,42 @@ index c1e6c78..68c2354 100644
  
          _cfg.AddEngineInstallation(new InstalledEngineVersion(foundVersion.Version, buildInfo.Signature));
          _cfg.CommitConfig();
+         return new EngineInstallationResult(foundVersion.Version, true);
+     }
+ 
++    private static async Task DownloadVerifiedPatchInput(string address, string digest, string signature,
++        string keyPath, FileStream output, CancellationToken cancel)
++    {
++        var uri = new Uri(address, UriKind.Absolute);
++        if (uri.Scheme != "https" || uri.UserInfo.Length != 0)
++            throw new InvalidDataException("Engine patch downloads require HTTPS.");
++        await using var input = await LauncherMobile.OpenEnginePayload!(address, cancel);
++        var buffer = new byte[64 * 1024];
++        int read;
++        while ((read = await input.ReadAsync(buffer, cancel)) > 0)
++        {
++            if (output.Length + read > 128L * 1024 * 1024)
++                throw new InvalidDataException("Engine patch input exceeds its download limit.");
++            await output.WriteAsync(buffer.AsMemory(0, read), cancel);
++        }
++        output.Position = 0;
++        if (!CryptographicOperations.FixedTimeEquals(await SHA256.HashDataAsync(output, cancel),
++                Convert.FromHexString(digest)))
++            throw new CryptographicException("Engine patch input hash mismatch.");
++        output.Position = 0;
++        using var bytes = new MemoryStream();
++        await output.CopyToAsync(bytes, cancel);
++        var key = PublicKey.Import(SignatureAlgorithm.Ed25519,
++            await File.ReadAllBytesAsync(keyPath, cancel), KeyBlobFormat.PkixPublicKeyText);
++        if (!SignatureAlgorithm.Ed25519.Verify(key, bytes.GetBuffer().AsSpan(0, checked((int)bytes.Length)),
++                Convert.FromHexString(signature)))
++            throw new CryptographicException("Engine patch input signature mismatch.");
++        output.Position = 0;
++    }
++
+     public async Task<bool> DownloadModuleIfNecessary(
+         string moduleName,
+         string moduleVersion,
 diff --git a/SS14.Launcher/Models/IClientProcess.cs b/SS14.Launcher/Models/IClientProcess.cs
 new file mode 100644
 index 0000000..a006d50
@@ -949,10 +1121,28 @@ index ca2cbe4..f590547 100644
      }
  
 diff --git a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
-index d61a93a..336a794 100644
+index d61a93a..95be4a6 100644
 --- a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
 +++ b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
-@@ -72,6 +72,11 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+@@ -27,6 +27,17 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+         DisableIncompatibleMacOS = OperatingSystem.IsMacOS();
+     }
+     public bool DisableIncompatibleMacOS { get; }
++    public bool IsAndroid => LauncherMobile.DataRoot != null;
++
++    public bool AndroidEnginePatching
++    {
++        get => Cfg.GetCVar(CVars.AndroidEnginePatching);
++        set
++        {
++            Cfg.SetCVar(CVars.AndroidEnginePatching, value);
++            Cfg.CommitConfig();
++        }
++    }
+ 
+     public override string Name => LocalizationManager.Instance.GetString("tab-options-title");
+ 
+@@ -72,6 +83,11 @@ public class OptionsTabViewModel : MainWindowTabViewModel
  
      public void OpenLogDirectory()
      {
@@ -1153,6 +1343,22 @@ index c2427a4..e6111d7 100644
          {
              Log.Error("Visual root isn't a window!");
              return;
+diff --git a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
+index 59e1c12..b8802b1 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
++++ b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
+@@ -23,6 +23,11 @@
+               Command="{Binding OpenLogDirectory}"/>
+ 
+       <StackPanel Orientation="Vertical">
++        <CheckBox IsVisible="{Binding IsAndroid}" Margin="4"
++                  IsChecked="{Binding AndroidEnginePatching}"
++                  Content="{loc:Loc tab-options-android-engine-patching}" />
++        <TextBlock IsVisible="{Binding IsAndroid}" Margin="8" TextWrapping="Wrap"
++                   Text="{loc:Loc tab-options-android-engine-patching-desc}" />
+         <views:LanguageSelector HorizontalAlignment="Left" Margin="4" DataContext="{Binding Language}"
+                                 Placement="BottomEdgeAlignedLeft" />
+         <Button Content="{loc:Loc tab-options-account-settings}" Margin="4" Command="{Binding OpenAccountSettings}" HorizontalAlignment="Left" />
 diff --git a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml.cs
 index 6a51143..75d9beb 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml.cs
