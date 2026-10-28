@@ -2,15 +2,13 @@
 
 ```mermaid
 flowchart LR
-    Hub[Официальный хаб / адрес сервера] --> Launcher[Оригинальный SS14.Launcher
-Avalonia Android]
+    Hub[Официальный хаб / адрес сервера] --> Launcher["Оригинальный SS14.Launcher<br/>Avalonia Android"]
     Launcher --> Catalog[Каталог Android-движков]
     Catalog --> Engine[Точная версия RobustToolbox]
     Launcher --> Content[Контент выбранного сервера]
     Engine --> Loader[Оригинальный SS14.Loader]
     Content --> Loader
-    Loader --> Game[Отдельный процесс :game
-SDL3 / GLES / CoreCLR]
+    Loader --> Game["Отдельный процесс :game<br/>SDL3 / GLES / CoreCLR"]
 ```
 
 ## Исходники и границы адаптации

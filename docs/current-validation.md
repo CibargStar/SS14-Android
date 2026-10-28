@@ -14,4 +14,6 @@
 
 Новые жесты проверены в настоящем движке на Linux: увеличение проекции, поворот в сторону пальцев, выбор объектов после преобразования, сохранение исходного Eye/FOV/light, отсутствие клика во время жеста и обычный tap. Полноэкранный код включён в Android-сборку. Проверка этих изменений на физическом S25 Ultra остаётся задачей тестового релиза.
 
-Конкретные команды приведены в [testing.md](testing.md), CI-логи — в [Actions](https://github.com/CibargStar/SS14-Android/actions). Релизные notes фиксируют версии и источники соответствующего бинарника. Известные незавершённые области: [compatibility.md](compatibility.md).
+Релиз [0.6.0-dev](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.6.0-dev): [матрица 16 движков](https://github.com/CibargStar/SS14-Android/actions/runs/40756735979), [host ARM64](https://github.com/CibargStar/SS14-Android/actions/runs/40755818695), [host x64](https://github.com/CibargStar/SS14-Android/actions/runs/40755825008), [проверка и публикация APK](https://github.com/CibargStar/SS14-Android/actions/runs/40759076030). Опубликованные SHA-256 и размеры обоих APK сверены с локальными подписанными файлами.
+
+Конкретные команды приведены в [testing.md](testing.md). Релизные notes фиксируют версии и источники соответствующего бинарника. Известные незавершённые области: [compatibility.md](compatibility.md).
