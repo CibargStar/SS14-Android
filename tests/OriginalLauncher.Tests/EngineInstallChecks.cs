@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using NSec.Cryptography;
 using SS14.Launcher;
+using SS14.Launcher.Models;
 using SS14.Launcher.Models.EngineManager;
 
 internal static class EngineInstallChecks
@@ -23,7 +24,10 @@ internal static class EngineInstallChecks
             ["0.0.1002"] = Version(new string('0', 64), signature),
             ["0.0.1003"] = Version(hash, new string('0', 128)),
             ["loop-a"] = new { redirect = "loop-b", platforms = new { } },
-            ["loop-b"] = new { redirect = "loop-a", platforms = new { } }
+            ["loop-b"] = new { redirect = "loop-a", platforms = new { } },
+            ["missing-target"] = new { redirect = "not-published", platforms = new { } },
+            ["wrong-platform"] = new { insecure = false, platforms = new Dictionary<string, object>
+                { [rid == "win-x64" ? "osx-arm64" : "win-x64"] = new { url = "memory://desktop", sha256 = hash, sig = signature } } }
         });
         var downloads = 0;
         LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(manifest));
@@ -50,6 +54,15 @@ internal static class EngineInstallChecks
         try { await manager.DownloadEngineIfNecessary("loop-a"); }
         catch (InvalidDataException) { loopRejected = true; }
         check(loopRejected, "redirect cycle rejected");
+        foreach (var unavailable in new[] { "294.0.0", "missing-target", "wrong-platform" })
+        {
+            var previousDownloads = downloads;
+            AndroidEngineUnavailableException? failure = null;
+            try { await manager.DownloadEngineIfNecessary(unavailable); }
+            catch (AndroidEngineUnavailableException e) { failure = e; }
+            check(failure?.Version == unavailable && downloads == previousDownloads,
+                "missing Android engine reports requested version without downloading desktop code: " + unavailable);
+        }
         var enginePath = manager.GetEnginePath("0.0.1001");
         var previous = Environment.GetEnvironmentVariable("SS14_DISABLE_SIGNING");
         try

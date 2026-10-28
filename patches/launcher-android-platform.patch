@@ -124,6 +124,30 @@ index 214def3..851c2fd 100644
      }
  
      private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+diff --git a/SS14.Launcher/Assets/Locale/en-US/text.ftl b/SS14.Launcher/Assets/Locale/en-US/text.ftl
+index ad61969..9575cfa 100644
+--- a/SS14.Launcher/Assets/Locale/en-US/text.ftl
++++ b/SS14.Launcher/Assets/Locale/en-US/text.ftl
+@@ -34,6 +34,7 @@ connecting-status-update-error =
+ connecting-status-update-error-no-engine-for-platform = This server is using an older game engine version that does not support your current platform. Please try another server or inform the server staff about this and try again later.
+ connecting-status-update-error-no-module-for-platform = This server requires additional functionality that is not yet supported on your current platform. Please try another server or inform the server staff about this and try again later.
+ connecting-status-update-error-unknown = Unknown
++connecting-status-update-error-android-engine-unavailable = This server requires engine { $version }. A matching Android build is not yet available in the catalog. This is a limitation of the current port; the game connection has not started.
+ connecting-status-updating = Updating: { $status }
+ connecting-status-connecting = Fetching connection info from server…
+ connecting-status-connection-failed = Failed to connect to server!
+diff --git a/SS14.Launcher/Assets/Locale/ru/text.ftl b/SS14.Launcher/Assets/Locale/ru/text.ftl
+index e81f9f2..352ea00 100644
+--- a/SS14.Launcher/Assets/Locale/ru/text.ftl
++++ b/SS14.Launcher/Assets/Locale/ru/text.ftl
+@@ -547,6 +547,7 @@ server-entry-round-time =
+     }
+ tab-servers-table-round-time = Время
+ connecting-status-update-error-unknown = Неизвестно
++connecting-status-update-error-android-engine-unavailable = Серверу требуется движок { $version }. В каталоге Android пока нет подходящей сборки. Это ограничение текущего порта; подключение к игре ещё не началось.
+ server-entry-status-lobby = Лобби
+ connecting-status-update-error-no-engine-for-platform = Эта игра использует более старую версию, которая не поддерживается вашей текущей платформой. Попробуйте другой сервер или подключитесь позже.
+ connecting-status-update-error-no-module-for-platform = Эта игра требует дополнительного функционала, который пока что не поддерживается вашей текущей платформой. Попробуйте другой сервер или подключитесь позже.
 diff --git a/SS14.Launcher/Helpers.cs b/SS14.Launcher/Helpers.cs
 index c1293e1..2e324c7 100644
 --- a/SS14.Launcher/Helpers.cs
@@ -314,7 +338,7 @@ index 7f5f26e..669f884 100644
              {
                  using var connection = new SqliteConnection(GetCfgDbConnectionString());
 diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
-index 7b217fd..0d4748e 100644
+index 7b217fd..6b997b6 100644
 --- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
 +++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
 @@ -1,4 +1,4 @@
@@ -345,7 +369,7 @@ index 7b217fd..0d4748e 100644
  
          _robustCacheValidUntil = _manifestStopwatch.Elapsed + ConfigConstants.RobustManifestCacheTime;
      }
-@@ -85,8 +94,11 @@ public sealed partial class EngineManagerDynamic
+@@ -85,10 +94,14 @@ public sealed partial class EngineManagerDynamic
  
          if (followRedirects)
          {
@@ -355,10 +379,14 @@ index 7b217fd..0d4748e 100644
 +                if (!seen.Add(versionInfo.RedirectVersion))
 +                    throw new System.IO.InvalidDataException("Engine manifest redirect loop.");
                  version = versionInfo.RedirectVersion;
-                 versionInfo = _cachedRobustVersionInfo[versionInfo.RedirectVersion];
+-                versionInfo = _cachedRobustVersionInfo[versionInfo.RedirectVersion];
++                if (!_cachedRobustVersionInfo.TryGetValue(version, out versionInfo))
++                    return null;
              }
+         }
+ 
 diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
-index c1e6c78..5c64406 100644
+index c1e6c78..68c2354 100644
 --- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 +++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 @@ -5,6 +5,7 @@ using System.IO.MemoryMappedFiles;
@@ -369,7 +397,21 @@ index c1e6c78..5c64406 100644
  using System.Text.RegularExpressions;
  using System.Threading;
  using System.Threading.Tasks;
-@@ -97,13 +98,9 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+@@ -87,7 +88,12 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+ 
+         var foundVersion = await GetVersionInfo(engineVersion, cancel: cancel);
+         if (foundVersion == null)
+-            throw new UpdateException("Unable to find engine version in manifest!");
++        {
++            Log.Warning("Engine {RequestedVersion} is missing from the engine catalog", engineVersion);
++            if (LauncherMobile.OpenEngineManifest != null)
++                throw new AndroidEngineUnavailableException(engineVersion);
++            throw new UpdateException($"Unable to find engine version {engineVersion} in manifest!");
++        }
+ 
+         if (foundVersion.Info.Insecure)
+             throw new UpdateException("Specified engine version is insecure!");
+@@ -97,17 +103,15 @@ public sealed partial class EngineManagerDynamic : IEngineManager
              engineVersion,
              foundVersion.Version);
  
@@ -385,7 +427,13 @@ index c1e6c78..5c64406 100644
  
          var bestRid = RidUtility.FindBestRid(foundVersion.Info.Platforms.Keys);
          if (bestRid == null)
-@@ -115,25 +112,54 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+         {
++            if (LauncherMobile.OpenEngineManifest != null)
++                throw new AndroidEngineUnavailableException(engineVersion);
+             throw new NoEngineForPlatformException("No engine version available for our platform!");
+         }
+ 
+@@ -115,25 +119,54 @@ public sealed partial class EngineManagerDynamic : IEngineManager
  
          var buildInfo = foundVersion.Info.Platforms[bestRid];
  
@@ -482,6 +530,20 @@ index 0000000..a006d50
 +}
 +
 +public sealed record MobileGameLaunch(string[] Arguments, Dictionary<string, string?> Environment);
+diff --git a/SS14.Launcher/Models/UpdateException.cs b/SS14.Launcher/Models/UpdateException.cs
+index cd7e04a..0f79f7e 100644
+--- a/SS14.Launcher/Models/UpdateException.cs
++++ b/SS14.Launcher/Models/UpdateException.cs
+@@ -11,3 +11,9 @@ public class UpdateException : Exception
+ 
+ public sealed class NoEngineForPlatformException(string message) : UpdateException(message);
+ public sealed class NoModuleForPlatformException(string message) : UpdateException(message);
++
++public sealed class AndroidEngineUnavailableException(string version)
++    : UpdateException($"Android engine {version} required by this server is not available in the engine catalog.")
++{
++    public string Version { get; } = version;
++}
 diff --git a/SS14.Launcher/PlatformWindow.cs b/SS14.Launcher/PlatformWindow.cs
 new file mode 100644
 index 0000000..908b2ca
@@ -833,6 +895,19 @@ index e2a84e2..d9b9e5d 100644
              {
                  // Try zstd.so we ship ourselves.
                  if (NativeLibrary.TryLoad("zstd.so", assembly, path, out var handle))
+diff --git a/SS14.Launcher/ViewModels/ConnectingViewModel.cs b/SS14.Launcher/ViewModels/ConnectingViewModel.cs
+index c8f6489..d722b6d 100644
+--- a/SS14.Launcher/ViewModels/ConnectingViewModel.cs
++++ b/SS14.Launcher/ViewModels/ConnectingViewModel.cs
+@@ -183,6 +183,8 @@ public class ConnectingViewModel : ViewModelBase
+     {
+         return _updater.UpdateException switch
+         {
++            AndroidEngineUnavailableException error => _loc.GetString("connecting-status-update-error-android-engine-unavailable",
++                ("version", error.Version)),
+             NoEngineForPlatformException => _loc.GetString("connecting-status-update-error-no-engine-for-platform"),
+             NoModuleForPlatformException => _loc.GetString("connecting-status-update-error-no-module-for-platform"),
+             _ => _loc.GetString("connecting-status-update-error",
 diff --git a/SS14.Launcher/ViewModels/MainWindowLoginViewModel.cs b/SS14.Launcher/ViewModels/MainWindowLoginViewModel.cs
 index c358eb1..1567672 100644
 --- a/SS14.Launcher/ViewModels/MainWindowLoginViewModel.cs
