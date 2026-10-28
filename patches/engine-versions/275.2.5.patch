@@ -1253,10 +1253,10 @@ index 29c54bc..7d546ec 100644
 -
 diff --git a/Robust.Client/UserInterface/Mobile/CameraTouchState.cs b/Robust.Client/UserInterface/Mobile/CameraTouchState.cs
 new file mode 100644
-index 0000000..b7f9865
+index 0000000..b201cff
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/CameraTouchState.cs
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,170 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Numerics;
@@ -1292,7 +1292,10 @@ index 0000000..b7f9865
 +
 +    public void Down(long id, Vector2 position, CameraTouchTarget target, double time)
 +    {
-+        if (!Valid(position) || _contacts.ContainsKey(id)) return;
++        if (!Valid(position)) return;
++        // SDL may lose a terminal event when Android cancels a gesture. A new
++        // DOWN with the reused pointer ID starts a fresh contact, never a hold.
++        if (_contacts.ContainsKey(id)) Up(id, true);
 +        var contact = new Contact(position, target, time);
 +        _contacts.Add(id, contact);
 +        if (target == CameraTouchTarget.Overlay) return;
@@ -1424,6 +1427,7 @@ index 0000000..b7f9865
 +
 +    private static bool Valid(Vector2 value) => float.IsFinite(value.X) && float.IsFinite(value.Y);
 +}
+
 diff --git a/Robust.Client/UserInterface/Mobile/MobileCameraTransform.cs b/Robust.Client/UserInterface/Mobile/MobileCameraTransform.cs
 new file mode 100644
 index 0000000..1d00f75
@@ -1488,10 +1492,10 @@ index 0000000..1d00f75
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
 new file mode 100644
-index 0000000..ba96e89
+index 0000000..db2d937
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
-@@ -0,0 +1,1187 @@
+@@ -0,0 +1,1211 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Globalization;
@@ -1508,6 +1512,7 @@ index 0000000..ba96e89
 +using Robust.Shared.IoC;
 +using Robust.Shared.Map;
 +using Robust.Shared.Maths;
++using Robust.Shared.Timing;
 +
 +
 +namespace Robust.Client.UserInterface.Mobile;
@@ -1589,6 +1594,7 @@ index 0000000..ba96e89
 +    private readonly PojavActionButton _hideButton;
 +    private readonly PojavActionButton _settingsButton;
 +    private MobileDisplaySettingsWindow? _settingsWindow;
++    private MobileDebugWindow? _debugWindow;
 +
 +    private readonly Control _clusterContainer;
 +    private readonly Control _topUtilityContainer;
@@ -2167,9 +2173,18 @@ index 0000000..ba96e89
 +    public void OpenDisplaySettings()
 +    {
 +        if (_settingsWindow is { IsOpen: true }) return;
-+        var window = new MobileDisplaySettingsWindow(_uiMgr.RootControl.Size);
++        var window = new MobileDisplaySettingsWindow(_uiMgr.RootControl.Size, ToggleDebug);
 +        _settingsWindow = window;
 +        window.OnClose += () => { window.Dispose(); _settingsWindow = null; };
++        window.OpenCentered();
++    }
++
++    public void ToggleDebug()
++    {
++        if (_debugWindow is { IsOpen: true }) { _debugWindow.Close(); return; }
++        var window = new MobileDebugWindow(_uiMgr.RootControl.Size);
++        _debugWindow = window;
++        window.OnClose += () => _debugWindow = null;
 +        window.OpenCentered();
 +    }
 +
@@ -2207,6 +2222,14 @@ index 0000000..ba96e89
 +
 +    public bool HandleTouch(TouchFingerEventArgs args)
 +    {
++        // A release belongs to the contact, even after hiding controls, opening
++        // a modal or losing the hit-test/claim. It must never depend on location.
++        if (args.Action is TouchFingerAction.Up or TouchFingerAction.Cancel)
++        {
++            var wasPressed = _thumbstick.IsPressed;
++            _thumbstick.OnTouchUp(args.FingerId);
++            return ReleaseTouch(args.FingerId) || (wasPressed && !_thumbstick.IsPressed);
++        }
 +        if (!VisibleInTree)
 +            return false;
 +
@@ -2220,6 +2243,7 @@ index 0000000..ba96e89
 +        {
 +            case TouchFingerAction.Down:
 +            {
++                ReleaseTouch(args.FingerId);
 +                var stickPos = args.Coordinates.Position / _thumbstick.UIScale - _thumbstick.GlobalPosition;
 +                if (_thumbstick.VisibleInTree && _thumbstick.HasPoint(stickPos))
 +                {
@@ -2270,27 +2294,31 @@ index 0000000..ba96e89
 +                return false;
 +            }
 +
-+            case TouchFingerAction.Up:
-+            case TouchFingerAction.Cancel:
-+            {
-+                if (_claimedTouches.Remove(args.FingerId, out var target))
-+                {
-+                    if (target is VirtualThumbstick stick)
-+                    {
-+                        stick.OnTouchUp(args.FingerId);
-+                    }
-+                    else if (target is PojavActionButton btn)
-+                    {
-+                        btn.OnTouchUp(args.FingerId);
-+                    }
-+                    return true;
-+                }
-+
-+                return false;
-+            }
 +        }
 +
 +        return false;
++    }
++
++    private bool ReleaseTouch(long id)
++    {
++        if (!_claimedTouches.Remove(id, out var target)) return false;
++        if (target is VirtualThumbstick stick) stick.OnTouchUp(id);
++        else if (target is PojavActionButton button) button.OnTouchUp(id);
++        return true;
++    }
++
++    public void SynchronizeTouchContacts(long[] activeFingers)
++    {
++        _thumbstick.SynchronizeTouchContacts(activeFingers);
++        foreach (var id in new List<long>(_claimedTouches.Keys))
++            if (Array.IndexOf(activeFingers, id) < 0) ReleaseTouch(id);
++    }
++
++    protected override void FrameUpdate(FrameEventArgs args)
++    {
++        base.FrameUpdate(args);
++        if (AppDomain.CurrentDomain.GetData("SS14_ANDROID_ACTIVE_TOUCHES") is Func<long[]> snapshot)
++            SynchronizeTouchContacts(snapshot());
 +    }
 +
 +
@@ -2679,12 +2707,13 @@ index 0000000..ba96e89
 +        return finalSize;
 +    }
 +}
+
 diff --git a/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs b/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs
 new file mode 100644
-index 0000000..7a6d936
+index 0000000..e342e41
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,63 @@
 +using System;
 +using System.Numerics;
 +using Robust.Client.UserInterface.Controls;
@@ -2700,7 +2729,7 @@ index 0000000..7a6d936
 +{
 +    [Dependency] private IConfigurationManager _cfg = default!;
 +
-+    public MobileDisplaySettingsWindow(Vector2 available)
++    public MobileDisplaySettingsWindow(Vector2 available, Action? toggleDebug = null)
 +    {
 +        IoCManager.InjectDependencies(this);
 +        Title = Loc.GetString("mobile-display-title");
@@ -2712,6 +2741,12 @@ index 0000000..7a6d936
 +        var column = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical,
 +            SeparationOverride = 12, Margin = new Robust.Shared.Maths.Thickness(12) };
 +        scroll.AddChild(column);
++        if (toggleDebug != null)
++        {
++            var debug = new Button { Text = "Debug" };
++            debug.OnPressed += _ => { Close(); toggleDebug(); };
++            column.AddChild(debug);
++        }
 +        var initial = _cfg.GetCVar(CVars.DisplayUIScale);
 +        var automatic = new CheckBox { Text = Loc.GetString("mobile-display-auto"), Pressed = initial == 0 };
 +        var value = new Label();
@@ -2742,6 +2777,7 @@ index 0000000..7a6d936
 +        UpdateLabel();
 +    }
 +}
+
 diff --git a/Robust.Client/UserInterface/Mobile/MobileDisplaySizing.cs b/Robust.Client/UserInterface/Mobile/MobileDisplaySizing.cs
 new file mode 100644
 index 0000000..b4d5757
@@ -3367,10 +3403,10 @@ index 0000000..cdde4db
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
 new file mode 100644
-index 0000000..1c1d5c3
+index 0000000..9c394ba
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
-@@ -0,0 +1,318 @@
+@@ -0,0 +1,324 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Numerics;
@@ -3473,6 +3509,12 @@ index 0000000..1c1d5c3
 +        ReleaseAllKeys();
 +        if (UserInterfaceManager.ControlFocused == this)
 +            UserInterfaceManager.ControlFocused = null;
++    }
++
++    public void SynchronizeTouchContacts(long[] activeFingers)
++    {
++        if (_activeFingerId is { } finger && Array.IndexOf(activeFingers, finger) < 0)
++            ReleaseStick();
 +    }
 +
 +    protected internal override bool HasPoint(Vector2 point)
@@ -3689,6 +3731,7 @@ index 0000000..1c1d5c3
 +        }
 +    }
 +}
+
 diff --git a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs b/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
 index 274aa2a..48560bc 100644
 --- a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
@@ -3846,7 +3889,7 @@ index 274aa2a..48560bc 100644
 +                && MobileOverlay?.BlocksWorldGestures != true && _eyeManager.CurrentMap != MapId.Nullspace
 +                && MouseGetControl(point) is IViewportControl viewport && ReferenceEquals(viewport, _eyeManager.MainViewport),
 +            () => { _focusedControls.Remove(EngineKeyFunctions.UIClick); ControlFocused = null; });
-+        var overlayHandled = MobileOverlay?.VisibleInTree == true && MobileOverlay.HandleTouch(args);
++        var overlayHandled = MobileOverlay?.HandleTouch(args) == true;
 +        var scale = _windowsToRoot.TryGetValue(args.Coordinates.Window, out var root) ? root.UIScale : 1;
 +        _mobileTouch.Handle(args, overlayHandled, scale);
 +    }
@@ -4263,3 +4306,98 @@ index 60895b6..8db2008 100644
  
              var duplicateErrors = new StringBuilder();
              var invalidIncludes = new StringBuilder();
+diff --git a/Robust.Client/UserInterface/Mobile/MobileDebugWindow.cs b/Robust.Client/UserInterface/Mobile/MobileDebugWindow.cs
+new file mode 100644
+index 0000000..413d99a
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileDebugWindow.cs
+@@ -0,0 +1,89 @@
++using System;
++using System.Diagnostics;
++using System.Numerics;
++using Robust.Client.UserInterface.Controls;
++using Robust.Client.UserInterface.CustomControls;
++using Robust.Shared.Timing;
++using Stopwatch = System.Diagnostics.Stopwatch;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++public sealed class MobileDebugWindow : DefaultWindow
++{
++    private readonly Label _fps = new();
++    private readonly Label _cpu = new();
++    private readonly Label _memory = new();
++    private readonly Label _managed = new();
++    private readonly Label _system = new();
++    private readonly Process _process = Process.GetCurrentProcess();
++    private long _started = Stopwatch.GetTimestamp();
++    private int _frames;
++    private double? _lastCpu;
++
++    public MobileDebugWindow(Vector2 available)
++    {
++        Title = "Debug";
++        MaxSize = Vector2.Max(new Vector2(160, 120), available - new Vector2(24));
++        MinSize = Vector2.Min(MaxSize, new Vector2(380, 230));
++        var column = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical,
++            SeparationOverride = 8, Margin = new Robust.Shared.Maths.Thickness(12) };
++        foreach (var label in new[] { _fps, _cpu, _memory, _managed, _system }) column.AddChild(label);
++        Contents.AddChild(column);
++        _fps.Text = "FPS / кадр: сбор данных…";
++        _cpu.Text = "CPU игры: сбор данных…";
++        ReadUsage(0);
++    }
++
++    protected override void FrameUpdate(FrameEventArgs args)
++    {
++        base.FrameUpdate(args);
++        if (!VisibleInTree) return;
++        _frames++;
++        var sampledAt = Stopwatch.GetTimestamp();
++        var seconds = Stopwatch.GetElapsedTime(_started, sampledAt).TotalSeconds;
++        if (seconds < 1) return;
++        _fps.Text = $"FPS: {_frames / seconds:F1}   Кадр: {seconds * 1000 / _frames:F1} мс";
++        ReadUsage(seconds);
++        _frames = 0;
++        _started = sampledAt;
++    }
++
++    private void ReadUsage(double seconds)
++    {
++        _managed.Text = $"Память .NET: {GC.GetTotalMemory(false) / 1048576d:F0} МиБ";
++        try
++        {
++            var provider = AppDomain.CurrentDomain.GetData("SS14_ANDROID_METRICS") as Func<double[]>;
++            var sample = provider?.Invoke();
++            if (sample != null && sample.Length != 5) throw new InvalidOperationException("Invalid resource sample.");
++            var cpu = sample?[0] ?? _process.TotalProcessorTime.TotalMilliseconds;
++            var cores = Math.Max(1, sample?[4] ?? Environment.ProcessorCount);
++            if (_lastCpu is { } previous && seconds > 0)
++                _cpu.Text = $"CPU игры: {Math.Clamp((cpu - previous) / (seconds * 10 * cores), 0, 100):F1}% от {cores:F0} ядер";
++            _lastCpu = cpu;
++            if (sample != null)
++            {
++                _memory.Text = $"Память игры (PSS): {sample[1] / 1048576:F0} МиБ";
++                _system.Text = $"Свободно RAM: {sample[2] / 1073741824:F1} / {sample[3] / 1073741824:F1} ГиБ";
++            }
++            else
++            {
++                _process.Refresh();
++                _memory.Text = $"Память процесса (RSS): {_process.WorkingSet64 / 1048576d:F0} МиБ";
++                _system.Text = "RAM системы: нет данных";
++            }
++        }
++        catch (Exception)
++        {
++            _cpu.Text = "CPU игры: нет данных";
++            _memory.Text = "Память процесса: нет данных";
++            _system.Text = "RAM системы: нет данных";
++        }
++    }
++
++    protected override void ExitedTree()
++    {
++        base.ExitedTree();
++        _process.Dispose();
++    }
++}

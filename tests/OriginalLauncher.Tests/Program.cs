@@ -41,6 +41,9 @@ using (var frame = host.CaptureRenderedFrame())
     Directory.CreateDirectory("artifacts");
     frame!.Save("artifacts/original-launcher-login.png");
 }
+host.Width = 600;
+host.Height = 260;
+Dispatcher.UIThread.RunJobs();
 var earlyAccessAccept = main.GetVisualDescendants().OfType<Button>().Single(button =>
     Equals(button.Content, SS14.Launcher.Localization.LocalizationManager.Instance.GetString("main-window-early-access-accept")));
 var acceptPoint = earlyAccessAccept.TranslatePoint(new Point(earlyAccessAccept.Bounds.Width / 2,
@@ -50,20 +53,21 @@ host.MouseUp(acceptPoint, MouseButton.Left);
 Dispatcher.UIThread.RunJobs();
 Assert(Locator.Current.GetRequiredService<DataManager>().GetCVar(CVars.HasDismissedEarlyAccessWarning),
     "pointer click reaches the original early-access acknowledgement command");
-host.Height = 260;
-Dispatcher.UIThread.RunJobs();
-Assert(main.Bounds.Height >= 500, "original controls retain a usable layout above the Android keyboard");
-var mobileViewport = grid.Children.OfType<ScrollViewer>().Single();
-Assert(mobileViewport.Extent.Height > mobileViewport.Viewport.Height,
-    "short viewport can scroll to the original lower controls");
-host.Height = 540;
-Dispatcher.UIThread.RunJobs();
-host.Width = 600;
-Dispatcher.UIThread.RunJobs();
-Assert(main.Bounds.Width >= 800 && mobileViewport.Extent.Width > mobileViewport.Viewport.Width,
-    "narrow phone viewport retains access to the complete original launcher width");
-host.Width = 960;
-Dispatcher.UIThread.RunJobs();
+var mobileViewport = grid.Children.OfType<LauncherFitViewport>().Single();
+foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(1040, 480), new Size(960, 540) })
+{
+    host.Width = size.Width;
+    host.Height = size.Height;
+    Dispatcher.UIThread.RunJobs();
+    var top = main.TranslatePoint(default, grid)!.Value;
+    var bottom = main.TranslatePoint(new Point(main.Bounds.Width, main.Bounds.Height), grid)!.Value;
+    Assert(main.Bounds.Width >= 799 && main.Bounds.Height >= 499,
+        $"original launcher retains finite desktop layout at {size}");
+    Assert(top.X >= -1 && top.Y >= -1 && bottom.X <= size.Width + 1 && bottom.Y <= size.Height + 1,
+        $"complete launcher fits viewport without outer scrolling at {size}");
+    Assert(mobileViewport.Scale > 0 && mobileViewport.Scale <= 1,
+        $"launcher uses uniform downscaling at {size}");
+}
 var direct = new DirectConnectDialog();
 var result = direct.ShowDialog<string?>(main);
 Assert(!main.IsEnabled && grid.Children.Count == 2, "original direct-connect dialog is modal");

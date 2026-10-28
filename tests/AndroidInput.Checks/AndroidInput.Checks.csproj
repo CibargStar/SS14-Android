@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><Compile Include="../../src/SS14.Android/AndroidTouchContacts.cs" Link="AndroidTouchContacts.cs" /></ItemGroup>
+</Project>

@@ -23,6 +23,7 @@ public sealed class GameActivity : SDLActivity
     private string _requestPath = "";
     private string _nativeDirectory = "";
     private string _gameDirectory = "";
+    private readonly AndroidTouchContacts _touchContacts = new();
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -33,8 +34,49 @@ public sealed class GameActivity : SDLActivity
         _nativeDirectory = ApplicationInfo!.NativeLibraryDir!;
         _gameDirectory = Path.Combine(FilesDir.AbsolutePath, "client");
         Directory.CreateDirectory(_gameDirectory);
+        AppDomain.CurrentDomain.SetData("SS14_ANDROID_ACTIVE_TOUCHES", (Func<long[]>)_touchContacts.Snapshot);
+        AppDomain.CurrentDomain.SetData("SS14_ANDROID_METRICS", (Func<double[]>)ReadMetrics);
         base.OnCreate(savedInstanceState);
         ApplyFullscreen();
+    }
+
+    public override bool DispatchTouchEvent(MotionEvent? ev)
+    {
+        if (ev != null && (ev.PointerCount == 0 || ev.GetToolType(0) != MotionEventToolType.Mouse))
+        {
+            switch (ev.ActionMasked)
+            {
+                case MotionEventActions.Up:
+                case MotionEventActions.Cancel:
+                case MotionEventActions.Outside:
+                    _touchContacts.Clear();
+                    break;
+                case MotionEventActions.Down:
+                case MotionEventActions.PointerDown:
+                case MotionEventActions.Move:
+                case MotionEventActions.PointerUp:
+                    var pointers = new int[ev.PointerCount];
+                    for (var i = 0; i < pointers.Length; i++) pointers[i] = ev.GetPointerId(i);
+                    _touchContacts.Update(pointers, ev.ActionMasked == MotionEventActions.PointerUp ? ev.ActionIndex : -1);
+                    break;
+            }
+        }
+        return base.DispatchTouchEvent(ev);
+    }
+
+    protected override void OnPause()
+    {
+        _touchContacts.Clear();
+        base.OnPause();
+    }
+
+    private double[] ReadMetrics()
+    {
+        using var memory = new ActivityManager.MemoryInfo();
+        ((ActivityManager)GetSystemService(ActivityService)!).GetMemoryInfo(memory);
+        // CPU milliseconds, process PSS bytes, available/total system RAM, cores.
+        return [global::Android.OS.Process.ElapsedCpuTime, global::Android.OS.Debug.Pss * 1024d,
+            memory.AvailMem, memory.TotalMem, Environment.ProcessorCount];
     }
 
     private void ApplyFullscreen()
@@ -62,6 +104,7 @@ public sealed class GameActivity : SDLActivity
 
     public override void OnWindowFocusChanged(bool hasFocus)
     {
+        if (!hasFocus) _touchContacts.Clear();
         base.OnWindowFocusChanged(hasFocus);
         if (hasFocus)
         {

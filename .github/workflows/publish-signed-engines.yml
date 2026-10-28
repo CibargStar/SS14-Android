@@ -6,7 +6,7 @@ on:
       tag:
         description: Immutable engine release tag
         type: string
-        default: android-engines-20261028-6
+        default: android-engines-20261028-7
 
 permissions:
   contents: write

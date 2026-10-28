@@ -23,7 +23,7 @@ on:
       version_code:
         description: Android package version code
         type: string
-        default: '7'
+        default: '8'
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SS14_ANDROID_ABI: ${{ inputs.rid == 'android-x64' && 'x86_64' || 'arm64-v8a' }}
-      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '7' }}
+      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '8' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,6 +58,8 @@ jobs:
         run: dotnet run --project tests/Thumbstick.Checks -c Release
       - name: Test world gestures and UI pointer arbitration
         run: dotnet run --project tests/CameraGesture.Checks -c Release
+      - name: Test Android physical pointer ownership and release
+        run: dotnet run --project tests/AndroidInput.Checks -c Release
       - name: Build platform-patched engine
         if: inputs.engine_channel != 'published'
         run: bash scripts/build-engine.sh

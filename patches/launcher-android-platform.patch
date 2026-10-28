@@ -27,7 +27,7 @@ index a788ade..c469bef 100644
      <PackageVersion Include="Dapper" Version="2.0.123"/>
      <PackageVersion Include="DynamicData" Version="8.4.1"/>
 diff --git a/SS14.Launcher/App.xaml.cs b/SS14.Launcher/App.xaml.cs
-index 214def3..851c2fd 100644
+index 214def3..5063d0a 100644
 --- a/SS14.Launcher/App.xaml.cs
 +++ b/SS14.Launcher/App.xaml.cs
 @@ -5,6 +5,7 @@ using System.Threading.Tasks;
@@ -78,7 +78,7 @@ index 214def3..851c2fd 100644
  
          if (ConfigConstants.IsAuthOverride)
          {
-@@ -160,7 +171,44 @@ public class App : Application
+@@ -160,7 +171,27 @@ public class App : Application
              viewModel.StartAuthOverrideCountdown();
          }
  
@@ -93,27 +93,10 @@ index 214def3..851c2fd 100644
 +            window.Height = double.NaN;
 +            var root = new Grid();
 +            LauncherMobile.Root = root;
-+            var viewport = new ScrollViewer
++            root.Children.Add(new LauncherFitViewport(new Avalonia.Size(minimumWidth, minimumHeight))
 +            {
-+                Content = window,
-+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-+                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Stretch
-+            };
-+            root.Children.Add(viewport);
-+            root.SizeChanged += (_, args) =>
-+            {
-+                var shortViewport = args.NewSize.Height < minimumHeight;
-+                var narrowViewport = args.NewSize.Width < minimumWidth;
-+                // Keep the existing desktop layout finite so server-list
-+                // virtualization still works when the outer viewport scrolls.
-+                window.Height = shortViewport ? minimumHeight : double.NaN;
-+                window.Width = narrowViewport ? minimumWidth : double.NaN;
-+                viewport.VerticalScrollBarVisibility = shortViewport
-+                    ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
-+                viewport.HorizontalScrollBarVisibility = narrowViewport
-+                    ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
-+            };
++                Child = window, ClipToBounds = true
++            });
 +            if (ApplicationLifetime is ISingleViewApplicationLifetime single)
 +                single.MainView = root;
 +        }
@@ -204,6 +187,52 @@ index c1293e1..2e324c7 100644
      }
      public static unsafe int MessageBoxHelper(string text, string caption, uint type)
      {
+diff --git a/SS14.Launcher/LauncherFitViewport.cs b/SS14.Launcher/LauncherFitViewport.cs
+new file mode 100644
+index 0000000..70c3b9f
+--- /dev/null
++++ b/SS14.Launcher/LauncherFitViewport.cs
+@@ -0,0 +1,40 @@
++using System;
++using Avalonia;
++using Avalonia.Controls;
++using Avalonia.Media;
++
++namespace SS14.Launcher;
++
++// Give upstream a finite desktop layout, then fit that layout uniformly into
++// the Android client area. Lists keep their own finite scrolling viewport.
++public sealed class LauncherFitViewport(Size minimum) : Decorator
++{
++    public double Scale { get; private set; } = 1;
++
++    private Size LogicalSize(Size available)
++    {
++        var width = double.IsFinite(available.Width) ? Math.Max(1, available.Width) : minimum.Width;
++        var height = double.IsFinite(available.Height) ? Math.Max(1, available.Height) : minimum.Height;
++        Scale = Math.Min(1, Math.Min(width / minimum.Width, height / minimum.Height));
++        return new Size(width / Scale, height / Scale);
++    }
++
++    protected override Size MeasureOverride(Size availableSize)
++    {
++        var logical = LogicalSize(availableSize);
++        Child?.Measure(logical);
++        return new Size(logical.Width * Scale, logical.Height * Scale);
++    }
++
++    protected override Size ArrangeOverride(Size finalSize)
++    {
++        var logical = LogicalSize(finalSize);
++        if (Child is { } child)
++        {
++            child.RenderTransformOrigin = RelativePoint.TopLeft;
++            child.RenderTransform = new ScaleTransform(Scale, Scale);
++            child.Arrange(new Rect(logical));
++        }
++        return finalSize;
++    }
++}
 diff --git a/SS14.Launcher/LauncherMobile.cs b/SS14.Launcher/LauncherMobile.cs
 new file mode 100644
 index 0000000..7fee381

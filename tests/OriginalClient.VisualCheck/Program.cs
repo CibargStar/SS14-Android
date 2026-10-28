@@ -150,6 +150,31 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     Assert(Down("W") && !Down("D"), "native SDL finger motion turns movement");
                     RawTouch("Up", 800, centre);
                     Assert(Get(stick, "IsPressed") is false && !Down("W") && !Down("D"), "native SDL finger up releases movement");
+                    var stickState = stick.GetType().GetField("_stick", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(stick)!;
+                    Assert((Vector2)Get(stickState, "Offset")! == Vector2.Zero, "finger lift returns knob exactly to centre");
+                    long[] activeFingers = [810];
+                    AppDomain.CurrentDomain.SetData("SS14_ANDROID_ACTIVE_TOUCHES", (Func<long[]>)(() => activeFingers));
+                    void Frame()
+                    {
+                        var frame = ui.GetType().GetMethod("FrameUpdate")!;
+                        frame.Invoke(ui, [Activator.CreateInstance(frame.GetParameters()[0].ParameterType, [0.016f])]);
+                    }
+                    RawTouch("Down", 810, centre + new Vector2(30, 0) * Number(stick, "UIScale"));
+                    Frame();
+                    Assert(Down("D"), "physical snapshot retains movement while stick finger is down");
+                    activeFingers = [811]; // Owner lifted, another finger is still down; deliberately lose SDL_UP.
+                    Frame();
+                    Assert(!Down("D") && Get(stick, "IsPressed") is false && (Vector2)Get(stickState, "Offset")! == Vector2.Zero,
+                        "Android pointer lifetime stops and recentres stick even without SDL_UP");
+                    activeFingers = [810];
+                    RawTouch("Down", 810, centre + new Vector2(0, -30) * Number(stick, "UIScale"));
+                    Frame();
+                    Assert(Down("W") && !Down("D"), "reused pointer acquires a fresh stick after lost release");
+                    activeFingers = [];
+                    Frame();
+                    Assert(!Down("W") && Get(stick, "IsPressed") is false, "Android cancellation releases all stick movement");
+                    AppDomain.CurrentDomain.SetData("SS14_ANDROID_ACTIVE_TOUCHES", null);
+                    RawTouch("Up", 810, centre);
                     var menu = Descendants(Get(ui, "RootControl")!).Single(c => c.GetType().Name == "MainMenuControl");
                     var options = Get(menu, "OptionsButton")!;
                     var point = Vector(Get(options, "GlobalPixelPosition")!) + Vector(Get(options, "PixelSize")!) / 2;
@@ -320,6 +345,29 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
             }
             await OnMain(() => { overlay.GetType().GetMethod("OpenDisplaySettings")!.Invoke(overlay, null); return true; });
             await Capture("display-settings");
+            await OnMain(() =>
+            {
+                var settings = Descendants(Get(ui, "RootControl")!).Single(c => c.GetType().Name == "MobileDisplaySettingsWindow");
+                var debug = Descendants(settings).Single(c => c.GetType().Name == "Button" && Get(c, "Text")?.ToString() == "Debug");
+                var point = Vector(Get(debug, "GlobalPixelPosition")!) + Vector(Get(debug, "PixelSize")!) / 2;
+                RawTouch("Down", 900, point);
+                RawTouch("Up", 900, point);
+                if (!Descendants(Get(ui, "RootControl")!).Any(c => c.GetType().Name == "MobileDebugWindow"))
+                    throw new Exception("Debug button did not open resource window through SDL input.");
+                Console.WriteLine("DEBUG PASS UI button opens real resource window through SDL");
+                return true;
+            });
+            await Task.Delay(1600);
+            await OnMain(() =>
+            {
+                var debug = Descendants(Get(ui, "RootControl")!).Single(c => c.GetType().Name == "MobileDebugWindow");
+                var text = string.Join("\n", Descendants(debug).Where(c => c.GetType().Name == "Label").Select(c => Get(c, "Text")));
+                if (!text.Contains("FPS:") || !text.Contains("CPU игры:") || !text.Contains("Память процесса (RSS):") || text.Contains("сбор данных"))
+                    throw new Exception("Resource metrics were not sampled: " + text);
+                Console.WriteLine("DEBUG PASS measured FPS, frame time, CPU and process memory: " + text.Replace("\n", " / "));
+                debug.GetType().GetMethod("Close")!.Invoke(debug, null);
+                return true;
+            });
             var originalOptions = await OnMain(() =>
             {
                 foreach (var window in Descendants(Get(ui, "RootControl")!).Where(c => c.GetType().Name == "MobileDisplaySettingsWindow").ToArray())
