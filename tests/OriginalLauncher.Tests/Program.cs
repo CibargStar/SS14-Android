@@ -97,6 +97,21 @@ Assert(logExports == 2, "both original log-directory actions route through Andro
 Assert(RidUtility.FindBestRid(["linux-arm64"], "android-arm64") == null, "Android never selects desktop Linux engine");
 Assert(RidUtility.FindBestRid(["android-arm64", "linux-arm64"], "android-arm64") == "android-arm64", "Android engine RID selected exactly");
 Assert(RidUtility.FindBestRid(["linux-x64"], "linux-x64") == "linux-x64", "desktop RID selection retained");
+EngineCatalogChecks.Run(Assert);
+var displayPreferences = new SS14.Launcher.Models.GameDisplaySettings();
+LauncherMobile.ReadGameDisplaySettings = () => displayPreferences;
+LauncherMobile.WriteGameDisplaySettings = value => displayPreferences = value.Normalize();
+model.OptionsTab.GameUiScaleAutomatic = false;
+model.OptionsTab.GameUiScalePercent = 75;
+Assert(Math.Abs(displayPreferences.UiScale - 0.75f) < 0.001f, "original Options tab changes the game UI scale");
+model.OptionsTab.ShowGameControls = false;
+Assert(!displayPreferences.ShowControls && displayPreferences.UiScale == 0.75f, "hiding touch controls preserves selected UI scale");
+model.OptionsTab.GameUiScaleAutomatic = true;
+Assert(displayPreferences.UiScale == 0 && !displayPreferences.ShowControls, "automatic scale preserves hidden control preference");
+displayPreferences = new SS14.Launcher.Models.GameDisplaySettings(1.25f, true);
+LauncherMobile.RefreshGameDisplaySettings?.Invoke();
+Assert(!model.OptionsTab.GameUiScaleAutomatic && Math.Abs(model.OptionsTab.GameUiScalePercent - 125) < 0.01 &&
+       model.OptionsTab.ShowGameControls, "original Options tab refreshes settings changed in game");
 host.Close();
 Task.Run(() => EngineInstallChecks.Run(
     Locator.Current.GetRequiredService<SS14.Launcher.Models.EngineManager.IEngineManager>(), Assert))

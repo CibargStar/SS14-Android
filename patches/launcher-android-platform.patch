@@ -125,13 +125,18 @@ index 214def3..851c2fd 100644
  
      private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
 diff --git a/SS14.Launcher/Assets/Locale/en-US/text.ftl b/SS14.Launcher/Assets/Locale/en-US/text.ftl
-index ad61969..234103b 100644
+index ad61969..106bd88 100644
 --- a/SS14.Launcher/Assets/Locale/en-US/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/en-US/text.ftl
-@@ -34,6 +34,9 @@ connecting-status-update-error =
+@@ -34,6 +34,14 @@ connecting-status-update-error =
  connecting-status-update-error-no-engine-for-platform = This server is using an older game engine version that does not support your current platform. Please try another server or inform the server staff about this and try again later.
  connecting-status-update-error-no-module-for-platform = This server requires additional functionality that is not yet supported on your current platform. Please try another server or inform the server staff about this and try again later.
  connecting-status-update-error-unknown = Unknown
++tab-options-android-display-title = In-game display and controls
++tab-options-android-game-scale-auto = Automatic game interface scale
++tab-options-android-game-scale-value = Game interface scale: { $percent }%
++tab-options-android-show-controls = Show touch controls
++tab-options-android-display-desc = Automatic scale fits the interface to your screen. These settings are also available through the in-game UI button. Image proportions and world object sizes stay the same.
 +tab-options-android-engine-patching = Experimental engine patching
 +tab-options-android-engine-patching-desc = For versions with a prepared patch, download the original engine and adapt it on this device. Source, patch and output signatures are verified. Downloads can be larger. Other versions use normal installation.
 +connecting-status-update-error-android-engine-unavailable = This server requires engine { $version }. A matching Android build is not yet available in the catalog. This is a limitation of the current port; the game connection has not started.
@@ -139,13 +144,18 @@ index ad61969..234103b 100644
  connecting-status-connecting = Fetching connection info from server…
  connecting-status-connection-failed = Failed to connect to server!
 diff --git a/SS14.Launcher/Assets/Locale/ru/text.ftl b/SS14.Launcher/Assets/Locale/ru/text.ftl
-index e81f9f2..867168c 100644
+index e81f9f2..b47ed17 100644
 --- a/SS14.Launcher/Assets/Locale/ru/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/ru/text.ftl
-@@ -547,6 +547,9 @@ server-entry-round-time =
+@@ -547,6 +547,14 @@ server-entry-round-time =
      }
  tab-servers-table-round-time = Время
  connecting-status-update-error-unknown = Неизвестно
++tab-options-android-display-title = Экран и управление в игре
++tab-options-android-game-scale-auto = Автоматический масштаб интерфейса игры
++tab-options-android-game-scale-value = Масштаб интерфейса игры: { $percent }%
++tab-options-android-show-controls = Показывать сенсорные кнопки управления
++tab-options-android-display-desc = Автоматический масштаб подбирается по размеру экрана. Настройки также доступны в игре по кнопке UI. Пропорции изображения и размер игровых объектов не меняются.
 +tab-options-android-engine-patching = Экспериментальный автопатч движка
 +tab-options-android-engine-patching-desc = Для версий с подготовленным патчем скачивает оригинальный движок и адаптирует его на устройстве. Подписи исходника, патча и результата проверяются. Загрузка может быть больше обычной. Остальные версии устанавливаются обычным способом.
 +connecting-status-update-error-android-engine-unavailable = Серверу требуется движок { $version }. В каталоге Android пока нет подходящей сборки. Это ограничение текущего порта; подключение к игре ещё не началось.
@@ -196,10 +206,10 @@ index c1293e1..2e324c7 100644
      {
 diff --git a/SS14.Launcher/LauncherMobile.cs b/SS14.Launcher/LauncherMobile.cs
 new file mode 100644
-index 0000000..5b0a621
+index 0000000..7fee381
 --- /dev/null
 +++ b/SS14.Launcher/LauncherMobile.cs
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,36 @@
 +using System;
 +using System.Collections.Generic;
 +using Avalonia.Controls;
@@ -223,6 +233,9 @@ index 0000000..5b0a621
 +    public static string? EnginePublicKeyPath { get; set; }
 +    public static Func<Task<bool>>? CheckLauncherUpdate { get; set; }
 +    public static Func<Task>? InstallLauncherUpdate { get; set; }
++    public static Func<GameDisplaySettings>? ReadGameDisplaySettings { get; set; }
++    public static Action<GameDisplaySettings>? WriteGameDisplaySettings { get; set; }
++    public static Action? RefreshGameDisplaySettings { get; set; }
 +    public static Grid? Root { get; set; }
 +    internal static readonly Stack<Action> DialogClosers = new();
 +
@@ -671,6 +684,23 @@ index c1e6c78..4d28435 100644
      public async Task<bool> DownloadModuleIfNecessary(
          string moduleName,
          string moduleVersion,
+diff --git a/SS14.Launcher/Models/GameDisplaySettings.cs b/SS14.Launcher/Models/GameDisplaySettings.cs
+new file mode 100644
+index 0000000..2083ee8
+--- /dev/null
++++ b/SS14.Launcher/Models/GameDisplaySettings.cs
+@@ -0,0 +1,11 @@
++using System;
++
++namespace SS14.Launcher.Models;
++
++public sealed record GameDisplaySettings(float UiScale = 0, bool ShowControls = true)
++{
++    public GameDisplaySettings Normalize() => this with
++    {
++        UiScale = !float.IsFinite(UiScale) || UiScale <= 0 ? 0 : Math.Clamp(UiScale, 0.25f, 3f)
++    };
++}
 diff --git a/SS14.Launcher/Models/IClientProcess.cs b/SS14.Launcher/Models/IClientProcess.cs
 new file mode 100644
 index 0000000..a006d50
@@ -983,6 +1013,49 @@ index 71548b9..e55275e 100644
      <Style.Animations>
        <Animation Duration="0:0:1">
          <KeyFrame Cue="0%">
+diff --git a/SS14.Launcher/Utility/EngineCatalogMerge.cs b/SS14.Launcher/Utility/EngineCatalogMerge.cs
+new file mode 100644
+index 0000000..b7459d4
+--- /dev/null
++++ b/SS14.Launcher/Utility/EngineCatalogMerge.cs
+@@ -0,0 +1,37 @@
++using System;
++using System.IO;
++using System.Text.Json.Nodes;
++
++namespace SS14.Launcher.Utility;
++
++public static class EngineCatalogMerge
++{
++    public static JsonObject Merge(JsonObject bundled, JsonObject online)
++    {
++        var merged = (JsonObject)bundled.DeepClone();
++        foreach (var (version, entry) in online)
++        {
++            if (entry is not JsonObject)
++                throw new InvalidDataException("Invalid online engine catalog entry.");
++            var replacement = (JsonObject)entry.DeepClone();
++            if (replacement["platforms"] is JsonObject remotePlatforms &&
++                bundled[version]?["platforms"] is JsonObject localPlatforms)
++            {
++                foreach (var (rid, platform) in remotePlatforms)
++                {
++                    if (platform is not JsonObject remote || localPlatforms[rid] is not JsonObject local)
++                        continue;
++                    var assetUrl = local["url"]?.GetValue<string>();
++                    if (assetUrl?.StartsWith("asset://engines/", StringComparison.Ordinal) == true &&
++                        string.Equals(remote["sha256"]?.GetValue<string>(), local["sha256"]?.GetValue<string>(), StringComparison.OrdinalIgnoreCase) &&
++                        string.Equals(remote["sig"]?.GetValue<string>(), local["sig"]?.GetValue<string>(), StringComparison.OrdinalIgnoreCase))
++                        remote["url"] = assetUrl;
++                }
++            }
++            // Online revocations, redirects and repaired package identities win.
++            // Retain a bundled URL only when it names the exact same signed bytes.
++            merged[version] = replacement;
++        }
++        return merged;
++    }
++}
 diff --git a/SS14.Launcher/Utility/RidUtility.cs b/SS14.Launcher/Utility/RidUtility.cs
 index fdac426..a397ca1 100644
 --- a/SS14.Launcher/Utility/RidUtility.cs
@@ -1121,14 +1194,61 @@ index ca2cbe4..f590547 100644
      }
  
 diff --git a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
-index d61a93a..95be4a6 100644
+index d61a93a..df79691 100644
 --- a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
 +++ b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
-@@ -27,6 +27,17 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+@@ -3,6 +3,7 @@ using System.Diagnostics;
+ using System.Threading.Tasks;
+ using Splat;
+ using SS14.Launcher.Localization;
++using SS14.Launcher.Models;
+ using SS14.Launcher.Models.ContentManagement;
+ using SS14.Launcher.Models.Data;
+ using SS14.Launcher.Models.EngineManager;
+@@ -25,8 +26,56 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+         _contentManager = Locator.Current.GetRequiredService<ContentManager>();
+ 
          DisableIncompatibleMacOS = OperatingSystem.IsMacOS();
++        LauncherMobile.RefreshGameDisplaySettings = RefreshGameDisplaySettings;
      }
      public bool DisableIncompatibleMacOS { get; }
 +    public bool IsAndroid => LauncherMobile.DataRoot != null;
++
++    private GameDisplaySettings DisplaySettings => LauncherMobile.ReadGameDisplaySettings?.Invoke() ?? new();
++    public bool GameUiScaleAutomatic
++    {
++        get => DisplaySettings.UiScale == 0;
++        set
++        {
++            LauncherMobile.WriteGameDisplaySettings?.Invoke(DisplaySettings with { UiScale = value ? 0 : 1 });
++            RefreshGameDisplaySettings();
++        }
++    }
++    public double GameUiScalePercent
++    {
++        get => DisplaySettings.UiScale == 0 ? 100 : DisplaySettings.UiScale * 100;
++        set
++        {
++            if (GameUiScaleAutomatic) return;
++            LauncherMobile.WriteGameDisplaySettings?.Invoke(DisplaySettings with { UiScale = (float)value / 100 });
++            OnPropertyChanged(nameof(GameUiScaleLabel));
++        }
++    }
++    public string GameUiScaleLabel => GameUiScaleAutomatic
++        ? LocalizationManager.Instance.GetString("tab-options-android-game-scale-auto")
++        : LocalizationManager.Instance.GetString("tab-options-android-game-scale-value", ("percent", (int)Math.Round(GameUiScalePercent)));
++    public bool ShowGameControls
++    {
++        get => DisplaySettings.ShowControls;
++        set => LauncherMobile.WriteGameDisplaySettings?.Invoke(DisplaySettings with { ShowControls = value });
++    }
++    public void RefreshGameDisplaySettings()
++    {
++        OnPropertyChanged(nameof(GameUiScaleAutomatic));
++        OnPropertyChanged(nameof(GameUiScalePercent));
++        OnPropertyChanged(nameof(GameUiScaleLabel));
++        OnPropertyChanged(nameof(ShowGameControls));
++    }
 +
 +    public bool AndroidEnginePatching
 +    {
@@ -1142,7 +1262,7 @@ index d61a93a..95be4a6 100644
  
      public override string Name => LocalizationManager.Instance.GetString("tab-options-title");
  
-@@ -72,6 +83,11 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+@@ -72,6 +121,11 @@ public class OptionsTabViewModel : MainWindowTabViewModel
  
      public void OpenLogDirectory()
      {
@@ -1344,13 +1464,22 @@ index c2427a4..e6111d7 100644
              Log.Error("Visual root isn't a window!");
              return;
 diff --git a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
-index 59e1c12..b8802b1 100644
+index 59e1c12..dd837a5 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
 +++ b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
-@@ -23,6 +23,11 @@
+@@ -23,6 +23,20 @@
                Command="{Binding OpenLogDirectory}"/>
  
        <StackPanel Orientation="Vertical">
++        <StackPanel IsVisible="{Binding IsAndroid}" Margin="8" Spacing="8">
++          <TextBlock Text="{loc:Loc tab-options-android-display-title}" FontWeight="Bold" />
++          <CheckBox Content="{loc:Loc tab-options-android-game-scale-auto}" IsChecked="{Binding GameUiScaleAutomatic}" />
++          <TextBlock Text="{Binding GameUiScaleLabel}" />
++          <Slider Minimum="25" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True"
++                  IsEnabled="{Binding !GameUiScaleAutomatic}" Value="{Binding GameUiScalePercent}" />
++          <CheckBox Content="{loc:Loc tab-options-android-show-controls}" IsChecked="{Binding ShowGameControls}" />
++          <TextBlock Text="{loc:Loc tab-options-android-display-desc}" TextWrapping="Wrap" />
++        </StackPanel>
 +        <CheckBox IsVisible="{Binding IsAndroid}" Margin="4"
 +                  IsChecked="{Binding AndroidEnginePatching}"
 +                  Content="{loc:Loc tab-options-android-engine-patching}" />

@@ -23,7 +23,7 @@ on:
       version_code:
         description: Android package version code
         type: string
-        default: '3'
+        default: '4'
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SS14_ANDROID_ABI: ${{ inputs.rid == 'android-x64' && 'x86_64' || 'arm64-v8a' }}
-      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '3' }}
+      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '4' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +50,8 @@ jobs:
         run: bash scripts/prepare-original-launcher.sh
       - name: Test original launcher, dialogs and persistence
         run: dotnet run --project tests/OriginalLauncher.Tests -p:AndroidLauncher=true -c Debug
+      - name: Test phone display sizing and cross-process preferences
+        run: dotnet run --project tests/AndroidDisplay.Checks -c Release
       - name: Build platform-patched engine
         if: inputs.engine_channel != 'published'
         run: bash scripts/build-engine.sh
@@ -70,7 +72,13 @@ jobs:
         with:
           name: ss14-managed-android-engine
           path: artifacts/engines/
+      - uses: actions/cache@v4
+        id: native-cache
+        with:
+          path: artifacts/native/${{ env.SS14_ANDROID_ABI }}/
+          key: ss14-native-ndk27-v1-${{ runner.os }}-${{ env.SS14_ANDROID_ABI }}-${{ hashFiles('scripts/build-native-*.sh') }}
       - name: Build Android SDL
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018'
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"

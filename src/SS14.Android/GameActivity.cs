@@ -47,6 +47,13 @@ public sealed class GameActivity : SDLActivity
             foreach (var (key, value) in request.Environment)
                 Environment.SetEnvironmentVariable(key, value);
             Environment.SetEnvironmentVariable("ROBUST_ANDROID_DATA", _gameDirectory);
+            var displayStore = new GameDisplaySettingsStore(FilesDir!.AbsolutePath);
+            var display = displayStore.Read();
+            Environment.SetEnvironmentVariable("ROBUST_ANDROID_UI_SCALE",
+                display.UiScale.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Environment.SetEnvironmentVariable("ROBUST_ANDROID_SHOW_CONTROLS", display.ShowControls ? "true" : "false");
+            AppDomain.CurrentDomain.SetData("SS14_ANDROID_DISPLAY_SAVE", (Action<float, bool>)((scale, show) =>
+                displayStore.Write(new GameDisplaySettings(scale, show))));
             var verifierDirectory = Path.Combine(FilesDir!.AbsolutePath, "verification");
             Directory.CreateDirectory(verifierDirectory);
             var metadataFiles = Assets!.List("verification") ?? [];

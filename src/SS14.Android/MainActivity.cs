@@ -39,6 +39,9 @@ public sealed class MainActivity : AvaloniaMainActivity
         LauncherMobile.Exit = Finish;
         LauncherMobile.OpenLogs = () => RunOnUiThread(ShareLogs);
         LauncherMobile.StartGame = StartGame;
+        var displaySettings = new GameDisplaySettingsStore(root);
+        LauncherMobile.ReadGameDisplaySettings = displaySettings.Read;
+        LauncherMobile.WriteGameDisplaySettings = displaySettings.Write;
         LauncherMobile.OpenUri = uri => RunOnUiThread(() =>
         {
             var intent = new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(uri));
@@ -81,6 +84,7 @@ public sealed class MainActivity : AvaloniaMainActivity
     protected override async void OnResume()
     {
         base.OnResume();
+        LauncherMobile.RefreshGameDisplaySettings?.Invoke();
         try { if (_updates != null) await _updates.ResumePendingInstall(); }
         catch (Exception e)
         {

@@ -51,7 +51,7 @@ internal sealed class AndroidUpdates(Activity activity)
             // catalog could ignore an engine revocation or mandatory host update.
             var remote = await _http.GetFromJsonAsync<JsonObject>(_sources.EngineManifest, cancel)
                 ?? throw new InvalidDataException("Empty engine catalog.");
-            foreach (var (version, entry) in remote) merged[version] = entry?.DeepClone();
+            merged = SS14.Launcher.Utility.EngineCatalogMerge.Merge(merged, remote);
         }
         return new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(merged));
     }
