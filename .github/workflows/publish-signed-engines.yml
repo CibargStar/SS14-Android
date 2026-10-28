@@ -1,0 +1,38 @@
+name: Publish externally signed engine packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: engine-staging
+          path: staging
+      - name: Verify every uploaded package against the pinned public key
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          root = pathlib.Path('staging')
+          files = json.loads((root / 'payloads.json').read_text())
+          for name, digest in files.items():
+              path = root / name
+              if path.name != name or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                  raise SystemExit('Unexpected staging payload: ' + name)
+              if name.endswith(('.zip', '.ss14patch')):
+                  subprocess.run(['openssl', 'pkeyutl', '-verify', '-pubin', '-rawin',
+                      '-inkey', 'updates/android-engine-public.pub', '-in', str(path),
+                      '-sigfile', str(path) + '.sig'], check=True)
+          PY
+      - name: Upload verified packages to the development release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload android-engines-20261028-1 --repo "$GITHUB_REPOSITORY" --clobber staging/Robust.Client.Android-*.zip staging/Robust.Client.Android-*.zip.sig staging/Robust.Client.Android-*.ss14patch staging/Robust.Client.Android-*.ss14patch.sig
+          gh release edit android-engines-20261028-1 --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false

@@ -18,7 +18,10 @@ if not re.fullmatch(r'[0-9]+(?:\.[0-9]+){2,3}(?:-[A-Za-z0-9._-]+)?', args.versio
 root = pathlib.Path(__file__).resolve().parent.parent
 repository = root / 'engine/RobustToolbox'
 destination = root / 'engine/versions' / args.version
-patch = root / 'patches/robust-android-platform.patch'
+patches = [root / 'patches/engine-versions' / (args.version + '.patch'),
+           root / 'patches/robust-android-platform.patch',
+           root / 'patches/engine-versions/288.1.2.patch']
+patches = [candidate for candidate in patches if candidate.exists()]
 
 def git(directory, *arguments, **options):
     return subprocess.run(['git', '-C', str(directory), *arguments], check=True, **options)
@@ -28,8 +31,19 @@ if not destination.exists():
     git(repository, 'worktree', 'add', '--detach', str(destination), 'FETCH_HEAD')
 git(destination, 'submodule', 'update', '--init', '--recursive')
 marker = destination / '.android-platform-patch.json'
+def accepts(candidate, reverse=False):
+    command = ['git', '-C', str(destination), 'apply', '--check']
+    if reverse: command.append('--reverse')
+    return subprocess.run(command + [str(candidate)], capture_output=True).returncode == 0
+patch = next((candidate for candidate in patches if accepts(candidate, reverse=True) or accepts(candidate)), None)
+if marker.exists():
+    recorded = json.loads(marker.read_text())
+    patch = next((candidate for candidate in patches if hashlib.sha256(candidate.read_bytes()).hexdigest() == recorded['patch']), patch)
+if patch is None:
+    git(destination, 'apply', '--check', str(patches[0]))
+    raise SystemExit('No reviewed Android patch applies to this exact engine version.')
 def state():
-    diff = subprocess.check_output(['git', '-C', str(destination), 'diff', '--binary'])
+    diff = subprocess.check_output(['git', '-C', str(destination), 'diff', 'HEAD', '--binary'])
     commit = subprocess.check_output(['git', '-C', str(destination), 'rev-parse', 'HEAD'], text=True).strip()
     return dict(commit=commit, patch=hashlib.sha256(patch.read_bytes()).hexdigest(),
                 changes=hashlib.sha256(diff).hexdigest())
