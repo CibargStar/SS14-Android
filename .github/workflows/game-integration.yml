@@ -1,0 +1,39 @@
+name: Build original server for Android integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: space-wizards/space-station-14
+          ref: 5758de66ded8251d09087b3cda0cd0bf9a854aa3
+          path: content/space-station-14
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Select matching original engine
+        working-directory: content/space-station-14/RobustToolbox
+        run: |
+          git fetch --depth 1 origin 160be31f57129c24c1715b873b92f14d028de8b8
+          git checkout --detach FETCH_HEAD
+          git submodule update --init --recursive
+      - name: Build unmodified original server
+        working-directory: content/space-station-14
+        run: >-
+          dotnet build Content.Server/Content.Server.csproj -c Release
+          -p:FullRelease=True -p:TargetOS=Linux -m:1
+          -p:BuildInParallel=false -p:UseSharedCompilation=false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ss14-original-server-294.0.1
+          path: content/space-station-14/bin/Content.Server/
+          retention-days: 7
