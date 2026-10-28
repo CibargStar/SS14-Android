@@ -36,7 +36,8 @@ jobs:
           python3 scripts/package-android-engine.py --key .keys/ci-engine.pem --version 294.0.1
       - name: Build Android SDL
         run: |
-          export ANDROID_NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -n 1)"
+          sdkmanager 'ndk;27.2.12479018'
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           bash scripts/build-native-sdl.sh
           bash scripts/build-native-libraries.sh
           bash scripts/build-native-sodium.sh
