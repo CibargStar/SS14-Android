@@ -1,7 +1,7 @@
 {
   "applicationId": "io.ss14.android",
-  "versionCode": 3,
-  "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-host-0.3.0-dev/SS14-Android-0.3.0-dev-arm64-coreclr.apk",
-  "sha256": "a19b221b96ef705f532ed3d19e961d923b8b2da73ece8053a55380ccdad6c9dd",
+  "versionCode": 4,
+  "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-host-0.4.0-dev/SS14-Android-0.4.0-dev-arm64-coreclr.apk",
+  "sha256": "811c512b2e622c69f75dc999662689e9d89257cf0574d4e11b14f79de5065f62",
   "minSdk": 26
 }
