@@ -1,0 +1,13 @@
+Space Station 14 application icon
+
+Original unchanged artwork: Resources/Textures/Logo/icon/icon-256x256.png
+Project: https://github.com/space-wizards/space-station-14
+Source revision: 5758de66ded8251d09087b3cda0cd0bf9a854aa3
+Author: AftrLite
+Source: https://github.com/space-wizards/space-station-14/pull/44473/
+License: Creative Commons Attribution-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-sa/4.0/
+
+The original PNG is retained unchanged. Android adaptive-icon resources place
+it over a background and within the launcher's icon mask. This artwork retains
+its original license independently of the surrounding port integration code.

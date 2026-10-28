@@ -116,6 +116,16 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
             var overlay = await OnMain(() => Get(ui, "MobileOverlay")!);
             await OnMain(() => { overlay.GetType().GetMethod("OpenDisplaySettings")!.Invoke(overlay, null); return true; });
             await Capture("display-settings");
+            var originalOptions = await OnMain(() =>
+            {
+                foreach (var window in Descendants(Get(ui, "RootControl")!).Where(c => c.GetType().Name == "MobileDisplaySettingsWindow").ToArray())
+                    window.GetType().GetMethod("Close")!.Invoke(window, null);
+                var options = Activator.CreateInstance(loaded.LoadedAssembly.GetType("Content.Client.Options.UI.OptionsMenu", true)!)!;
+                options.GetType().GetMethod("OpenCentered", Type.EmptyTypes)!.Invoke(options, null);
+                return options;
+            });
+            await Capture("original-options");
+            await OnMain(() => { originalOptions.GetType().GetMethod("Close")!.Invoke(originalOptions, null); return true; });
             await OnMain(() =>
             {
                 var configType = shared.GetType("Robust.Shared.Configuration.IConfigurationManager", true)!;
@@ -140,5 +150,6 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
 };
 return MobileLoader.Run([Path.GetFullPath(args[0]), args[1], Path.GetFullPath(args[2]),
     "--mount-zip", Path.GetFullPath(args[3]), "--cvar", "mobile.touch_controls=true",
-    "--cvar", "display.max_fps=10", "--cvar", "display.width=2340", "--cvar", "display.height=1080"],
+    "--cvar", "display.max_fps=10", "--cvar", "display.width=" + (Environment.GetEnvironmentVariable("SS14_VISUAL_WIDTH") ?? "2340"),
+    "--cvar", "display.height=" + (Environment.GetEnvironmentVariable("SS14_VISUAL_HEIGHT") ?? "1080")],
     Path.GetFullPath(args[4]), (_, _) => { });
