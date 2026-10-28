@@ -60,6 +60,31 @@ internal static class EngineInstallChecks
             check(result == 2, "Android loader enforces signatures even if desktop debug bypass is set");
         }
         finally { Environment.SetEnvironmentVariable("SS14_DISABLE_SIGNING", previous); }
+        var updatedPayload = "signed Android platform repair"u8.ToArray();
+        var updatedSignature = Convert.ToHexString(SignatureAlgorithm.Ed25519.Sign(key, updatedPayload));
+        var updatedHash = Convert.ToHexString(SHA256.HashData(updatedPayload));
+        byte[] UpdatedManifest(string digest) => JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+        { ["0.0.1001"] = Version(digest, updatedSignature) });
+        LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(UpdatedManifest(updatedHash)));
+        LauncherMobile.OpenEnginePayload = (_, _) => Task.FromResult<Stream>(new MemoryStream(updatedPayload));
+        var repairedManager = new EngineManagerDynamic();
+        var repaired = await repairedManager.DownloadEngineIfNecessary("0.0.1001");
+        check(repaired.Changed && File.ReadAllBytes(enginePath).SequenceEqual(updatedPayload) &&
+              repairedManager.GetEngineSignature("0.0.1001") == updatedSignature,
+            "signed platform repair replaces the same upstream engine version");
+        var nextPayload = "next signed Android platform repair"u8.ToArray();
+        var nextSignature = Convert.ToHexString(SignatureAlgorithm.Ed25519.Sign(key, nextPayload));
+        var nextHash = Convert.ToHexString(SHA256.HashData(nextPayload));
+        var nextManifest = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+        { ["0.0.1001"] = Version(nextHash, nextSignature) });
+        // Advertise a new signed revision, but return the wrong download bytes.
+        LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(nextManifest));
+        var repairRejected = false;
+        try { await new EngineManagerDynamic().DownloadEngineIfNecessary("0.0.1001"); }
+        catch (CryptographicException) { repairRejected = true; }
+        check(repairRejected && File.ReadAllBytes(enginePath).SequenceEqual(updatedPayload) &&
+              repairedManager.GetEngineSignature("0.0.1001") == updatedSignature,
+            "corrupt platform repair preserves the working engine and stored signature");
         LauncherMobile.OpenEngineManifest = null;
         LauncherMobile.OpenEnginePayload = null;
     }

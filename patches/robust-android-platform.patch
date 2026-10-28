@@ -3393,9 +3393,18 @@ index 1afcb00..b1bc3d2 100644
  
                  if ((rName != null) && NativeLibrary.TryLoad(rName, assembly, path, out var handle))
 diff --git a/Robust.Shared/Log/ConsoleLogHandler.cs b/Robust.Shared/Log/ConsoleLogHandler.cs
-index 2633b8e..cc44a0a 100644
+index 2633b8e..208e9ac 100644
 --- a/Robust.Shared/Log/ConsoleLogHandler.cs
 +++ b/Robust.Shared/Log/ConsoleLogHandler.cs
+@@ -51,7 +51,7 @@ namespace Robust.Shared.Log
+ 
+         static ConsoleLogHandler()
+         {
+-            WriteAnsiColors = !System.Console.IsOutputRedirected;
++            WriteAnsiColors = !OperatingSystem.IsAndroid() && !System.Console.IsOutputRedirected;
+ 
+             if (WriteAnsiColors && OperatingSystem.IsWindows())
+             {
 @@ -113,7 +113,13 @@ namespace Robust.Shared.Log
                      _line.AppendLine(message.Exception.ToString());
                  }
@@ -3429,3 +3438,62 @@ index 06be04d..e29fe66 100644
 +    [DllImport("libdl")]
      public static extern IntPtr dlopen([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int flags);
  }
+diff --git a/Robust.Shared/Serialization/Manager/SerializationManager.cs b/Robust.Shared/Serialization/Manager/SerializationManager.cs
+index 151805d..2da95e9 100644
+--- a/Robust.Shared/Serialization/Manager/SerializationManager.cs
++++ b/Robust.Shared/Serialization/Manager/SerializationManager.cs
+@@ -74,10 +74,16 @@ namespace Robust.Shared.Serialization.Manager
+             InitializeFlagsAndConstants(flagsTypes, constantsTypes);
+             InitializeTypeSerializers(typeSerializers);
+ 
+-            // This is a bag, not a hash set.
+-            // Duplicates are fine since the CWT<,> won't re-run the constructor if it's already in there.
++            // Multiple inherited attributes can discover the same type.
+             var registrations = new ConcurrentBag<Type>();
+             var records = new ConcurrentDictionary<Type, byte>();
++            var parallelOptions = new ParallelOptions
++            {
++                // Avoid creating many blocked workers around mobile runtime
++                // generic-type initialization and metadata locks.
++                MaxDegreeOfParallelism = OperatingSystem.IsAndroid()
++                    ? Math.Max(1, Environment.ProcessorCount) : -1
++            };
+ 
+             IEnumerable<Type> GetImplicitTypes(Type type)
+             {
+@@ -114,7 +120,7 @@ namespace Robust.Shared.Serialization.Manager
+                 }
+             }
+ 
+-            Parallel.ForEach(_reflectionManager.FindAllTypes(), type =>
++            Parallel.ForEach(_reflectionManager.FindAllTypes(), parallelOptions, type =>
+             {
+                 var meansDef = false;
+                 foreach (var meansAttr in meansDataDef)
+@@ -153,7 +159,13 @@ namespace Robust.Shared.Serialization.Manager
+             var sawmill = Logger.GetSawmill(LogCategory);
+             _serializerSawmill = Logger.GetSawmill("szr");
+ 
+-            Parallel.ForEach(registrations, type =>
++            // ConcurrentDictionary.GetOrAdd can run its value factory more than
++            // once for concurrent duplicates. Each definition is needed once.
++            var registrationTypes = registrations.Distinct().ToArray();
++            var registrationTimer = System.Diagnostics.Stopwatch.StartNew();
++            var registered = 0;
++            sawmill.Debug($"Registering {registrationTypes.Length} unique data definitions");
++            Parallel.ForEach(registrationTypes, parallelOptions, type =>
+             {
+                 if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition)
+                 {
+@@ -174,7 +186,11 @@ namespace Robust.Shared.Serialization.Manager
+                 }
+ 
+                 _dataDefinitions.GetOrAdd(type, static (t, s) => s.Item1.CreateDataDefinition(t, s.isRecord), (this, isRecord));
++                var completed = System.Threading.Interlocked.Increment(ref registered);
++                if (OperatingSystem.IsAndroid() && completed % 250 == 0)
++                    sawmill.Debug($"Registered {completed}/{registrationTypes.Length} data definitions in {registrationTimer.Elapsed}");
+             });
++            sawmill.Debug($"Registered {registered} data definitions in {registrationTimer.Elapsed}");
+ 
+             var duplicateErrors = new StringBuilder();
+             var invalidIncludes = new StringBuilder();

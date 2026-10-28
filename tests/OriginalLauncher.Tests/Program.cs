@@ -6,6 +6,7 @@ using Avalonia.Headless;
 using Avalonia.Threading;
 using Avalonia.Input;
 using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 using SS14.Launcher;
 using SS14.Launcher.Models.Data;
 using SS14.Launcher.Utility;
@@ -25,7 +26,7 @@ typeof(App).GetMethod("OnStartup", System.Reflection.BindingFlags.Instance | Sys
     .Invoke(Application.Current, [null, null]);
 Assert(LauncherMobile.Root is Grid, "mobile startup created original launcher root");
 var grid = LauncherMobile.Root!;
-var main = grid.Children.OfType<MainWindow>().Single();
+var main = grid.GetLogicalDescendants().OfType<MainWindow>().Single();
 Assert(main.Content is MainWindowContent, "original MainWindowContent is used");
 Assert(main.DataContext is SS14.Launcher.ViewModels.MainWindowViewModel, "original MainWindowViewModel is used");
 Assert(File.Exists(LauncherPaths.PathContentDb), "original content database migration ran");
@@ -49,6 +50,20 @@ host.MouseUp(acceptPoint, MouseButton.Left);
 Dispatcher.UIThread.RunJobs();
 Assert(Locator.Current.GetRequiredService<DataManager>().GetCVar(CVars.HasDismissedEarlyAccessWarning),
     "pointer click reaches the original early-access acknowledgement command");
+host.Height = 260;
+Dispatcher.UIThread.RunJobs();
+Assert(main.Bounds.Height >= 500, "original controls retain a usable layout above the Android keyboard");
+var mobileViewport = grid.Children.OfType<ScrollViewer>().Single();
+Assert(mobileViewport.Extent.Height > mobileViewport.Viewport.Height,
+    "short viewport can scroll to the original lower controls");
+host.Height = 540;
+Dispatcher.UIThread.RunJobs();
+host.Width = 600;
+Dispatcher.UIThread.RunJobs();
+Assert(main.Bounds.Width >= 800 && mobileViewport.Extent.Width > mobileViewport.Viewport.Width,
+    "narrow phone viewport retains access to the complete original launcher width");
+host.Width = 960;
+Dispatcher.UIThread.RunJobs();
 var direct = new DirectConnectDialog();
 var result = direct.ShowDialog<string?>(main);
 Assert(!main.IsEnabled && grid.Children.Count == 2, "original direct-connect dialog is modal");

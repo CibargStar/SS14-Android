@@ -27,10 +27,18 @@ index a788ade..c469bef 100644
      <PackageVersion Include="Dapper" Version="2.0.123"/>
      <PackageVersion Include="DynamicData" Version="8.4.1"/>
 diff --git a/SS14.Launcher/App.xaml.cs b/SS14.Launcher/App.xaml.cs
-index 214def3..8b19362 100644
+index 214def3..851c2fd 100644
 --- a/SS14.Launcher/App.xaml.cs
 +++ b/SS14.Launcher/App.xaml.cs
-@@ -61,6 +61,8 @@ public class App : Application
+@@ -5,6 +5,7 @@ using System.Threading.Tasks;
+ using Avalonia;
+ using Avalonia.Controls;
+ using Avalonia.Controls.ApplicationLifetimes;
++using Avalonia.Controls.Primitives;
+ using Avalonia.Markup.Xaml;
+ using Avalonia.Media.Imaging;
+ using Avalonia.Platform;
+@@ -61,6 +62,8 @@ public class App : Application
          {
              using var dataStream = AssetLoader.Open(new Uri($"avares://SS14.Launcher/Assets/{path}"));
  
@@ -39,7 +47,7 @@ index 214def3..8b19362 100644
              var asset = LoadAsset(type, dataStream);
  
              _baseAssets.Add(name, asset);
-@@ -78,6 +80,8 @@ public class App : Application
+@@ -78,6 +81,8 @@ public class App : Application
                  continue;
              }
  
@@ -48,7 +56,7 @@ index 214def3..8b19362 100644
              var ms = new MemoryStream(data, writable: false);
              var asset = LoadAsset(def.Type, ms);
  
-@@ -118,6 +122,11 @@ public class App : Application
+@@ -118,6 +123,11 @@ public class App : Application
              desktop.Startup += OnStartup;
              desktop.Exit += OnExit;
          }
@@ -60,7 +68,7 @@ index 214def3..8b19362 100644
      }
  
      private void OnStartup(object? s, ControlledApplicationLifetimeStartupEventArgs e)
-@@ -151,7 +160,8 @@ public class App : Application
+@@ -151,7 +161,8 @@ public class App : Application
          var lc = new LauncherCommands(viewModel);
          lc.RunCommandTask();
          Locator.CurrentMutable.RegisterConstant(lc);
@@ -70,20 +78,42 @@ index 214def3..8b19362 100644
  
          if (ConfigConstants.IsAuthOverride)
          {
-@@ -160,7 +170,22 @@ public class App : Application
+@@ -160,7 +171,44 @@ public class App : Application
              viewModel.StartAuthOverrideCountdown();
          }
  
 -        window.Show();
 +        if (LauncherMobile.DataRoot != null)
 +        {
++            var minimumHeight = window.MinHeight;
++            var minimumWidth = window.MinWidth;
 +            window.MinWidth = 0;
 +            window.MinHeight = 0;
 +            window.Width = double.NaN;
 +            window.Height = double.NaN;
 +            var root = new Grid();
 +            LauncherMobile.Root = root;
-+            root.Children.Add(window);
++            var viewport = new ScrollViewer
++            {
++                Content = window,
++                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
++                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
++                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Stretch
++            };
++            root.Children.Add(viewport);
++            root.SizeChanged += (_, args) =>
++            {
++                var shortViewport = args.NewSize.Height < minimumHeight;
++                var narrowViewport = args.NewSize.Width < minimumWidth;
++                // Keep the existing desktop layout finite so server-list
++                // virtualization still works when the outer viewport scrolls.
++                window.Height = shortViewport ? minimumHeight : double.NaN;
++                window.Width = narrowViewport ? minimumWidth : double.NaN;
++                viewport.VerticalScrollBarVisibility = shortViewport
++                    ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
++                viewport.HorizontalScrollBarVisibility = narrowViewport
++                    ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
++            };
 +            if (ApplicationLifetime is ISingleViewApplicationLifetime single)
 +                single.MainView = root;
 +        }
@@ -328,7 +358,7 @@ index 7b217fd..0d4748e 100644
                  versionInfo = _cachedRobustVersionInfo[versionInfo.RedirectVersion];
              }
 diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
-index c1e6c78..98f0a75 100644
+index c1e6c78..5c64406 100644
 --- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 +++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 @@ -5,6 +5,7 @@ using System.IO.MemoryMappedFiles;
@@ -339,7 +369,40 @@ index c1e6c78..98f0a75 100644
  using System.Text.RegularExpressions;
  using System.Threading;
  using System.Threading.Tasks;
-@@ -120,20 +121,37 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+@@ -97,13 +98,9 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+             engineVersion,
+             foundVersion.Version);
+ 
+-        if (_cfg.EngineInstallations.Lookup(foundVersion.Version).HasValue)
+-        {
+-            // Already have the engine version, we're good.
++        if (LauncherMobile.OpenEngineManifest == null &&
++            _cfg.EngineInstallations.Lookup(foundVersion.Version).HasValue)
+             return new EngineInstallationResult(foundVersion.Version, false);
+-        }
+-
+-        Log.Information("Installing engine version {version}...", foundVersion.Version);
+ 
+         var bestRid = RidUtility.FindBestRid(foundVersion.Info.Platforms.Keys);
+         if (bestRid == null)
+@@ -115,25 +112,54 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+ 
+         var buildInfo = foundVersion.Info.Platforms[bestRid];
+ 
++        var installed = _cfg.EngineInstallations.Lookup(foundVersion.Version);
++        if (installed.HasValue && installed.Value.Signature == buildInfo.Signature &&
++            File.Exists(GetEnginePath(foundVersion.Version)))
++        {
++            return new EngineInstallationResult(foundVersion.Version, false);
++        }
++
++        // Android platform fixes can change a signed package without changing
++        // the upstream protocol version. Replace it only after verification;
++        // a failed update must leave the previous engine and signature intact.
++        Log.Information("Installing engine version {version}...", foundVersion.Version);
++
+         Log.Debug("Downloading engine: {EngineDownloadUrl}", buildInfo.Url);
+ 
          Helpers.EnsureDirectoryExists(LauncherPaths.DirEngineInstallations);
  
          var downloadTarget = Path.Combine(LauncherPaths.DirEngineInstallations, $"{foundVersion.Version}.zip");
@@ -421,14 +484,15 @@ index 0000000..a006d50
 +public sealed record MobileGameLaunch(string[] Arguments, Dictionary<string, string?> Environment);
 diff --git a/SS14.Launcher/PlatformWindow.cs b/SS14.Launcher/PlatformWindow.cs
 new file mode 100644
-index 0000000..c450cf2
+index 0000000..908b2ca
 --- /dev/null
 +++ b/SS14.Launcher/PlatformWindow.cs
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,98 @@
 +using System;
 +using System.Threading.Tasks;
 +using Avalonia;
 +using Avalonia.Controls;
++using Avalonia.Controls.Primitives;
 +using Avalonia.Layout;
 +using Avalonia.Media;
 +using Avalonia.Platform;
@@ -468,8 +532,8 @@ index 0000000..c450cf2
 +        var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
 +        var previousFocus = TopLevel.GetTopLevel(owner)?.FocusManager?.GetFocusedElement();
 +        MinWidth = 0;
-+        MaxWidth = Math.Max(1, root.Bounds.Width - 24);
-+        MaxHeight = Math.Max(1, root.Bounds.Height - 24);
++        MaxWidth = double.PositiveInfinity;
++        MaxHeight = double.PositiveInfinity;
 +        Height = double.NaN;
 +        var closeButton = new Button { Content = "×", HorizontalAlignment = HorizontalAlignment.Right };
 +        var title = new TextBlock { Text = Title, VerticalAlignment = VerticalAlignment.Center };
@@ -480,11 +544,19 @@ index 0000000..c450cf2
 +        var panel = new DockPanel();
 +        DockPanel.SetDock(header, Dock.Top);
 +        panel.Children.Add(header);
-+        panel.Children.Add(this);
++        var contentScroll = new ScrollViewer
++        {
++            Content = this,
++            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
++            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
++        };
++        panel.Children.Add(contentScroll);
 +        var frame = new Border
 +        {
 +            Background = new SolidColorBrush(Color.Parse("#212126")), Padding = new Thickness(8),
 +            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
++            MaxHeight = Math.Max(1, root.Bounds.Height - 24),
++            MaxWidth = Math.Max(1, root.Bounds.Width - 24),
 +            Child = panel
 +        };
 +        var overlay = new Grid { Background = new SolidColorBrush(Color.Parse("#AA000000")) };
@@ -499,7 +571,7 @@ index 0000000..c450cf2
 +                throw new InvalidOperationException("Dialogs must close in presentation order.");
 +            LauncherMobile.DialogClosers.Pop();
 +            root.Children.Remove(overlay);
-+            panel.Children.Remove(this);
++            contentScroll.Content = null;
 +            owner.IsEnabled = wasEnabled;
 +            _close = null;
 +            previousFocus?.Focus();
@@ -1041,7 +1113,7 @@ index 6a51143..75d9beb 100644
  }
 diff --git a/SS14.Loader/MobileLoader.cs b/SS14.Loader/MobileLoader.cs
 new file mode 100644
-index 0000000..bf7734f
+index 0000000..131aec8
 --- /dev/null
 +++ b/SS14.Loader/MobileLoader.cs
 @@ -0,0 +1,59 @@
@@ -1092,7 +1164,7 @@ index 0000000..bf7734f
 +        {
 +            "SDL3" or "SDL3.dll" => "libSDL3.so",
 +            "freetype6" or "freetype6.dll" or "libfreetype.so.6" or "libfreetype6.so" => "libfreetype.so",
-+            "OpenAL32.dll" or "openal32" or "libopenal.so.1" => "libopenal.so",
++            "AL" or "libAL.so" or "OpenAL32.dll" or "openal32" or "libopenal.so.1" => "libopenal.so",
 +            "libEGL.dll" => "libEGL.so",
 +            "libdl.so.2" => "libdl.so",
 +            "zstd" or "zstd.so" or "libzstd.so.1" => "libzstd.so",

@@ -34,6 +34,10 @@ jobs:
           mkdir -m 700 .keys
           openssl genpkey -algorithm ED25519 -out .keys/ci-engine.pem
           python3 scripts/package-android-engine.py --key .keys/ci-engine.pem --version 294.0.1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ss14-managed-android-engine
+          path: artifacts/engines/
       - name: Build Android SDL
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018'
