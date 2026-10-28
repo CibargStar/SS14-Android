@@ -1,0 +1,38 @@
+name: Build exact Android engine versions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['294.0.0', '293.0.1', '292.0.1', '290.0.2', '289.0.5']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Apply Android platform changes to exact upstream sources
+        run: python3 scripts/prepare-engine-version.py '${{ matrix.version }}'
+      - name: Build original engine for Android
+        run: >-
+          dotnet build engine/versions/${{ matrix.version }}/Robust.Client/Robust.Client.csproj
+          -c Release -p:FullRelease=True -p:TargetOS=Android -m:1
+          -p:BuildInParallel=false -p:UseSharedCompilation=false --nologo
+      - name: Package development artifact for verification and external signing
+        run: |
+          mkdir -m 700 .keys
+          openssl genpkey -algorithm ED25519 -out .keys/temporary.pem
+          python3 scripts/package-android-engine.py --engine engine/versions/${{ matrix.version }} --key .keys/temporary.pem --version '${{ matrix.version }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ss14-android-engine-${{ matrix.version }}
+          path: artifacts/engines/
