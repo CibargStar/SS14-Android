@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
 using SS14.Loader;
@@ -114,6 +115,46 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
             }
             await Capture("main-menu");
             var overlay = await OnMain(() => Get(ui, "MobileOverlay")!);
+            if (Environment.GetEnvironmentVariable("SS14_CHECK_THUMBSTICK") == "1")
+            {
+                await OnMain(() =>
+                {
+                    var stick = Descendants(overlay).Single(c => c.GetType().Name == "VirtualThumbstick");
+                    var inputType = client.GetType("Robust.Client.Input.IInputManager", true)!;
+                    var input = Resolve(inputType);
+                    var keyType = client.GetType("Robust.Client.Input.Keyboard+Key", true)!;
+                    bool Down(string key) => (bool)inputType.GetMethod("IsKeyDown")!.Invoke(input, [Enum.Parse(keyType, key)])!;
+                    void Assert(bool success, string name)
+                    {
+                        if (!success) throw new Exception("Thumbstick integration: " + name);
+                        Console.WriteLine("STICK PASS " + name);
+                    }
+                    var centre = (Vector2)Get(stick, "Size")! / 2;
+                    void Touch(string action, long id, Vector2 offset) => stick.GetType().GetMethod(action)!
+                        .Invoke(stick, [id, centre + offset]);
+                    void Up(long id) => stick.GetType().GetMethod("OnTouchUp")!.Invoke(stick, [id]);
+                    Touch("OnTouchDown", 11, new Vector2(30, -30));
+                    Assert(Down("W") && Down("D") && !Down("S") && !Down("A"), "diagonal reaches original input manager");
+                    Touch("OnTouchDown", 22, new Vector2(-30, 30));
+                    Up(22);
+                    Assert(Down("W") && Down("D") && Get(stick, "IsPressed") is true, "second finger cannot interrupt movement");
+                    Touch("OnTouchMove", 11, Vector2.Zero);
+                    Assert(!Down("W") && !Down("D"), "returning to centre releases both original keys");
+                    Touch("OnTouchMove", 11, new Vector2(-30, 0));
+                    Assert(Down("A") && !Down("D"), "turning releases old direction before pressing the new one");
+                    var clyde = Resolve(clydeType);
+                    var focusType = client.GetType("Robust.Client.Graphics.WindowFocusedEventArgs", true)!;
+                    var focus = Activator.CreateInstance(focusType, [false, clydeType.GetProperty("MainWindow")!.GetValue(clyde)])!;
+                    stick.GetType().GetMethod("WindowFocusChanged", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(stick, [focus]);
+                    Assert(!Down("A") && Get(stick, "IsPressed") is false, "focus loss releases movement through the original input manager");
+                    Touch("OnTouchDown", 33, new Vector2(0, 30));
+                    Up(11);
+                    Assert(Down("S") && Get(stick, "IsPressed") is true, "old gesture release cannot stop a new gesture");
+                    Up(33);
+                    Assert(!Down("W") && !Down("A") && !Down("S") && !Down("D"), "finger lift leaves no movement keys held");
+                    return true;
+                });
+            }
             await OnMain(() => { overlay.GetType().GetMethod("OpenDisplaySettings")!.Invoke(overlay, null); return true; });
             await Capture("display-settings");
             var originalOptions = await OnMain(() =>

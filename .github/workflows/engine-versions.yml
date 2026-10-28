@@ -8,6 +8,10 @@ on:
         type: choice
         options: [recent, observed-hub]
         default: recent
+      versions:
+        description: Optional comma-separated exact versions (overrides scope)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -22,11 +26,16 @@ jobs:
       - id: select
         env:
           SCOPE: ${{ inputs.scope }}
+          EXACT_VERSIONS: ${{ inputs.versions }}
         run: |
           python3 - <<'PY'
-          import json, os
+          import json, os, re
           recent = ['294.0.0', '294.0.1', '293.0.1', '292.0.1', '291.0.2', '290.0.2', '289.0.5']
           versions = list(json.load(open('docs/engine-versions-observed.json'))['canonical_after_official_redirects']) if os.environ['SCOPE'] == 'observed-hub' else recent
+          if os.environ.get('EXACT_VERSIONS', '').strip():
+              versions = list(dict.fromkeys(v.strip() for v in os.environ['EXACT_VERSIONS'].split(',')))
+          if not 1 <= len(versions) <= 50 or any(not re.fullmatch(r'[0-9]+(?:\.[0-9]+){2,3}(?:-[A-Za-z0-9._-]+)?', v) for v in versions):
+              raise SystemExit('Expected 1–50 exact upstream engine versions.')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('matrix=' + json.dumps(versions) + '\n')
           PY

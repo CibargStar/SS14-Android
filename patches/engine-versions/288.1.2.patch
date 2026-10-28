@@ -886,7 +886,7 @@ index 388522f..6d889cf 100644
          event Action<WindowDestroyedEventArgs> DestroyWindow;
  
 diff --git a/Robust.Client/Input/InputManager.cs b/Robust.Client/Input/InputManager.cs
-index e689fb1..09bf195 100644
+index e689fb1..0e31a90 100644
 --- a/Robust.Client/Input/InputManager.cs
 +++ b/Robust.Client/Input/InputManager.cs
 @@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
@@ -906,7 +906,7 @@ index e689fb1..09bf195 100644
 +                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
 +                if (!isUI)
 +                {
-+                    args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode, args.AltGr);
++                    args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode);
 +                    MobileControlsOverlay.ResetSecondaryMode();
 +                }
 +            }
@@ -953,7 +953,7 @@ index e689fb1..09bf195 100644
  
 +            if (OperatingSystem.IsAndroid() && args.Key == Key.MouseLeft && _keysPressed[(int)Key.MouseRight] && !_keysPressed[(int)Key.MouseLeft])
 +            {
-+                args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode, args.AltGr);
++                args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode);
 +            }
 +
              FirstChanceOnKeyEvent?.Invoke(args, KeyEventType.Up);
@@ -1181,10 +1181,10 @@ index 29c54bc..7d546ec 100644
 -
 diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
 new file mode 100644
-index 0000000..83926d3
+index 0000000..04b7256
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
-@@ -0,0 +1,1183 @@
+@@ -0,0 +1,1186 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Globalization;
@@ -1903,7 +1903,10 @@ index 0000000..83926d3
 +            return false;
 +
 +        if (_modalOverlay.Visible || IsEditMode)
++        {
++            _thumbstick.ReleaseStick();
 +            return false;
++        }
 +
 +        switch (args.Action)
 +        {
@@ -2834,12 +2837,121 @@ index 0000000..76ca27d
 +        }
 +    }
 +}
+diff --git a/Robust.Client/UserInterface/Mobile/ThumbstickState.cs b/Robust.Client/UserInterface/Mobile/ThumbstickState.cs
+new file mode 100644
+index 0000000..7765ffc
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/ThumbstickState.cs
+@@ -0,0 +1,103 @@
++using System;
++using System.Numerics;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++[Flags]
++internal enum StickDirection : byte
++{
++    None = 0,
++    Up = 1,
++    Right = 2,
++    Down = 4,
++    Left = 8,
++}
++
++/// <summary>Pointer ownership and stable eight-way movement, independent of frame rate.</summary>
++internal sealed class ThumbstickState
++{
++    private const float SectorAngle = MathF.PI / 4;
++    private const float AngularHysteresis = MathF.PI / 36; // Five degrees.
++    private int? _sector;
++
++    public bool IsPressed { get; private set; }
++    public long? FingerId { get; private set; }
++    public Vector2 Offset { get; private set; }
++    public StickDirection Direction { get; private set; }
++
++    public bool Press(long? fingerId, Vector2 offset, float deadzone, float travel)
++    {
++        // A second finger or synthetic mouse press cannot steal a held stick.
++        if (IsPressed) return false;
++        IsPressed = true;
++        FingerId = fingerId;
++        Move(fingerId, offset, deadzone, travel);
++        return true;
++    }
++
++    public bool Move(long? fingerId, Vector2 offset, float deadzone, float travel)
++    {
++        if (!IsPressed || FingerId != fingerId) return false;
++        if (!float.IsFinite(offset.X) || !float.IsFinite(offset.Y))
++        {
++            Neutral();
++            return true;
++        }
++        var distance = offset.Length();
++        if (!float.IsFinite(distance))
++        {
++            Neutral();
++            return true;
++        }
++        Offset = distance > 0 ? offset * (MathF.Min(distance, MathF.Max(0, travel)) / distance) : Vector2.Zero;
++        // Separate start/stop radii avoid rapid walk/stop toggles near the centre.
++        var threshold = MathF.Max(0.001f, deadzone) * (Direction == StickDirection.None ? 1 : 0.75f);
++        if (distance < threshold)
++        {
++            Direction = StickDirection.None;
++            _sector = null;
++            return true;
++        }
++        var angle = MathF.Atan2(offset.Y, offset.X);
++        var next = (int)MathF.Floor((angle + SectorAngle / 2) / SectorAngle) & 7;
++        if (_sector is { } previous)
++        {
++            var difference = MathF.Abs(MathF.IEEERemainder(angle - previous * SectorAngle, MathF.Tau));
++            if (difference <= SectorAngle / 2 + AngularHysteresis) next = previous;
++        }
++        _sector = next;
++        Direction = next switch
++        {
++            0 => StickDirection.Right,
++            1 => StickDirection.Down | StickDirection.Right,
++            2 => StickDirection.Down,
++            3 => StickDirection.Down | StickDirection.Left,
++            4 => StickDirection.Left,
++            5 => StickDirection.Up | StickDirection.Left,
++            6 => StickDirection.Up,
++            _ => StickDirection.Up | StickDirection.Right,
++        };
++        return true;
++    }
++
++    public bool Release(long? fingerId)
++    {
++        if (!IsPressed || FingerId != fingerId) return false;
++        Cancel();
++        return true;
++    }
++
++    public void Cancel()
++    {
++        IsPressed = false;
++        FingerId = null;
++        Neutral();
++    }
++
++    private void Neutral()
++    {
++        Direction = StickDirection.None;
++        Offset = Vector2.Zero;
++        _sector = null;
++    }
++}
 diff --git a/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
 new file mode 100644
-index 0000000..89dfea6
+index 0000000..7520d20
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
-@@ -0,0 +1,317 @@
+@@ -0,0 +1,308 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Numerics;
@@ -2855,6 +2967,7 @@ index 0000000..89dfea6
 +public sealed partial class VirtualThumbstick : Control
 +{
 +    [Dependency] private IInputManager _inputManager = default!;
++    [Dependency] private IClyde _clyde = default!;
 +
 +    public float Radius { get; set; } = 75f;
 +    public float KnobRadius { get; set; } = 32f;
@@ -2868,10 +2981,16 @@ index 0000000..89dfea6
 +
 +    public bool IsPressed => _isPressed;
 +
-+    private bool _isPressed;
-+    private Vector2 _knobOffset = Vector2.Zero;
++    private readonly ThumbstickState _stick = new();
++    private bool _isPressed => _stick.IsPressed;
++    private Vector2 _knobOffset => _stick.Offset;
 +    private Vector2? _dragTouchOffset;
 +    private readonly HashSet<Keyboard.Key> _activeKeys = new();
++    private static readonly (Keyboard.Key Key, StickDirection Direction)[] MovementKeys =
++    [
++        (Keyboard.Key.W, StickDirection.Up), (Keyboard.Key.S, StickDirection.Down),
++        (Keyboard.Key.A, StickDirection.Left), (Keyboard.Key.D, StickDirection.Right),
++    ];
 +
 +    public VirtualThumbstick()
 +    {
@@ -2880,17 +2999,34 @@ index 0000000..89dfea6
 +        SetSize = new Vector2(Radius * 2f + 20f, Radius * 2f + 20f);
 +    }
 +
-+    private long? _activeFingerId;
++    private long? _activeFingerId => _stick.FingerId;
++
++    protected override void EnteredTree()
++    {
++        base.EnteredTree();
++        _clyde.OnWindowFocused += WindowFocusChanged;
++    }
++
++    protected override void ExitedTree()
++    {
++        _clyde.OnWindowFocused -= WindowFocusChanged;
++        ReleaseStick();
++        base.ExitedTree();
++    }
++
++    private void WindowFocusChanged(WindowFocusedEventArgs args)
++    {
++        if (!args.Focused) ReleaseStick();
++    }
 +
 +    public void OnTouchDown(long fingerId, Vector2 localPos)
 +    {
 +        if (IsEditMode)
 +            return;
 +
-+        _activeFingerId = fingerId;
-+        _isPressed = true;
 +        var offset = localPos - (Size / 2f);
-+        UpdateStickOffset(offset);
++        if (_stick.Press(fingerId, offset, Deadzone, MathF.Max(0, Radius - KnobRadius)))
++            ApplyMovement();
 +    }
 +
 +    public void OnTouchMove(long fingerId, Vector2 localPos)
@@ -2912,15 +3048,10 @@ index 0000000..89dfea6
 +
 +    public void ReleaseStick()
 +    {
-+        if (!_isPressed)
-+            return;
-+
-+        _activeFingerId = null;
-+        _isPressed = false;
-+        _knobOffset = Vector2.Zero;
++        _stick.Cancel();
++        ReleaseAllKeys();
 +        if (UserInterfaceManager.ControlFocused == this)
 +            UserInterfaceManager.ControlFocused = null;
-+        ReleaseAllKeys();
 +    }
 +
 +    protected internal override bool HasPoint(Vector2 point)
@@ -2937,6 +3068,10 @@ index 0000000..89dfea6
 +        if (IsEditMode)
 +        {
 +            _dragTouchOffset = null;
++        }
++        else if (_activeFingerId == null)
++        {
++            ReleaseStick();
 +        }
 +    }
 +
@@ -2961,9 +3096,12 @@ index 0000000..89dfea6
 +            return;
 +        }
 +
-+        _isPressed = true;
 +        var offset = args.RelativePosition - (Size / 2f);
-+        UpdateStickOffset(offset);
++        if (_stick.Press(null, offset, Deadzone, MathF.Max(0, Radius - KnobRadius)))
++        {
++            UserInterfaceManager.ControlFocused = this;
++            ApplyMovement();
++        }
 +        args.Handle();
 +    }
 +
@@ -3026,62 +3164,27 @@ index 0000000..89dfea6
 +
 +    private void UpdateStickOffset(Vector2 rawOffset)
 +    {
-+        var dist = rawOffset.Length();
-+        if (dist < 0.0001f)
-+        {
-+            _knobOffset = Vector2.Zero;
-+            UpdateMovementKeys(Vector2.Zero, 0f);
-+            return;
-+        }
-+
-+        var dir = rawOffset / dist;
-+        _knobOffset = dir * MathF.Min(dist, Radius);
-+
-+        if (dist >= Deadzone)
-+        {
-+            OnStickSteering?.Invoke();
-+        }
-+
-+        UpdateMovementKeys(dir, dist);
++        if (_stick.Move(_activeFingerId, rawOffset, Deadzone, MathF.Max(0, Radius - KnobRadius)))
++            ApplyMovement();
 +    }
 +
-+    private void UpdateMovementKeys(Vector2 dir, float dist)
++    private void ApplyMovement()
 +    {
-+        var newKeys = new HashSet<Keyboard.Key>();
++        if (_stick.Direction != StickDirection.None) OnStickSteering?.Invoke();
++        // Release old directions before pressing new ones, including a direct
++        // reversal, so the original input stack never sees opposing keys held.
++        foreach (var (key, direction) in MovementKeys)
++            if ((_stick.Direction & direction) == 0) SetMovementKey(key, false);
++        foreach (var (key, direction) in MovementKeys)
++            if ((_stick.Direction & direction) != 0) SetMovementKey(key, true);
++    }
 +
-+        if (dist >= Deadzone)
-+        {
-+            const float threshold = 0.35f;
-+
-+            if (dir.Y < -threshold)
-+                newKeys.Add(Keyboard.Key.W);
-+            else if (dir.Y > threshold)
-+                newKeys.Add(Keyboard.Key.S);
-+
-+            if (dir.X > threshold)
-+                newKeys.Add(Keyboard.Key.D);
-+            else if (dir.X < -threshold)
-+                newKeys.Add(Keyboard.Key.A);
-+        }
-+
-+        foreach (var key in _activeKeys)
-+        {
-+            if (!newKeys.Contains(key))
-+            {
-+                _inputManager.KeyUp(new KeyEventArgs(key, false, false, false, false, false, 0));
-+            }
-+        }
-+
-+        foreach (var key in newKeys)
-+        {
-+            if (!_activeKeys.Contains(key))
-+            {
-+                _inputManager.KeyDown(new KeyEventArgs(key, false, false, false, false, false, 0));
-+            }
-+        }
-+
-+        _activeKeys.Clear();
-+        _activeKeys.UnionWith(newKeys);
++    private void SetMovementKey(Keyboard.Key key, bool down)
++    {
++        if (down ? !_activeKeys.Add(key) : !_activeKeys.Remove(key)) return;
++        var args = new KeyEventArgs(key, false, false, false, false, false, 0);
++        if (down) _inputManager.KeyDown(args);
++        else _inputManager.KeyUp(args);
 +    }
 +
 +    private void ReleaseAllKeys()

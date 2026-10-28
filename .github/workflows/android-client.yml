@@ -54,6 +54,8 @@ jobs:
         run: dotnet run --project tests/OriginalLauncher.Tests -p:AndroidLauncher=true -c Debug
       - name: Test phone display sizing and cross-process preferences
         run: dotnet run --project tests/AndroidDisplay.Checks -c Release
+      - name: Test movement stick ownership, deadzone and direction stability
+        run: dotnet run --project tests/Thumbstick.Checks -c Release
       - name: Build platform-patched engine
         if: inputs.engine_channel != 'published'
         run: bash scripts/build-engine.sh

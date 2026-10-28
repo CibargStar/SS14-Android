@@ -24,6 +24,8 @@ if args.version != actual_version:
 args.output.mkdir(parents=True, exist_ok=True)
 commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
 metadata = dict(version=args.version, upstream=commit, runtime='net10.0', platform='Android', host_abi=1)
+metadata['source_patch_sha256'] = hashlib.sha256(subprocess.check_output(
+    ['git', '-C', str(root), 'diff', 'HEAD', '--binary'])).hexdigest()
 archive = args.output / f'Robust.Client.Android-{args.version}.zip'
 files = [(p, p.name) for p in sorted((root / 'bin/Client').glob('*.dll'))]
 if not any(name == 'Robust.Client.dll' for _, name in files):

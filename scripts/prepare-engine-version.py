@@ -68,16 +68,18 @@ if 'public bool AltGr' not in events:
     input_path = destination / 'Robust.Client/Input/InputManager.cs'
     original = input_path.read_text()
     needle = ', args.RawCode, args.AltGr)'
-    if original.count(needle) != 2:
+    if original.count(needle) == 2:
+        input_path.write_text(original.replace(needle, ', args.RawCode)'))
+    elif original.count(', args.ScanCode, args.RawCode)') != 2 and original.count(', args.ScanCode)') != 2:
         raise SystemExit('Unrecognized legacy input API; manual port review is required.')
-    input_path.write_text(original.replace(needle, ', args.RawCode)'))
 if 'RawCode' not in events:
     input_path = destination / 'Robust.Client/Input/InputManager.cs'
     original = input_path.read_text()
     needle = ', args.RawCode)'
-    if original.count(needle) != 2:
+    if original.count(needle) == 2:
+        input_path.write_text(original.replace(needle, ')'))
+    elif original.count(', args.ScanCode)') != 2:
         raise SystemExit('Unrecognized oldest input API; manual port review is required.')
-    input_path.write_text(original.replace(needle, ')'))
 # Keep the original protocol/API while applying the same ImageSharp security
 # patch level used by the latest upstream engine. Do not disable NuGet auditing.
 packages = destination / 'Directory.Packages.props'
