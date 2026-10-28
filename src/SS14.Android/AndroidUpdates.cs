@@ -8,7 +8,8 @@ using System.Text.Json.Nodes;
 
 namespace SS14.Android;
 
-internal sealed record UpdateSources(string? EngineManifest, string? ApkManifest);
+internal sealed record UpdateSources(string? EngineManifest, string? ApkManifest,
+    Dictionary<string, string>? ApkManifests = null);
 internal sealed record ApkRelease(string ApplicationId, long VersionCode, string Url, string Sha256, int MinSdk);
 
 // Android-specific transport and package installation. The original launcher owns
@@ -27,6 +28,14 @@ internal sealed class AndroidUpdates(Activity activity)
     {
         using var input = activity.Assets!.Open("update-sources.json");
         _sources = JsonSerializer.Deserialize<UpdateSources>(input, Json) ?? new(null, null);
+        var rid = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+        {
+            System.Runtime.InteropServices.Architecture.Arm64 => "android-arm64",
+            System.Runtime.InteropServices.Architecture.X64 => "android-x64",
+            _ => "unsupported"
+        };
+        if (_sources.ApkManifests?.TryGetValue(rid, out var apkManifest) == true)
+            _sources = _sources with { ApkManifest = apkManifest };
         if (_sources.EngineManifest != null) RequireHttps(_sources.EngineManifest);
         if (_sources.ApkManifest != null) RequireHttps(_sources.ApkManifest);
     }
