@@ -2,6 +2,7 @@ using System.Collections;
 using System.Numerics;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using SS14.Loader;
 
@@ -116,6 +117,49 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
             }
             await Capture("main-menu");
             var overlay = await OnMain(() => Get(ui, "MobileOverlay")!);
+            // Use SDL's actual event watch and the production subscription chain.
+            // Calling UI.TouchFinger directly would hide missing input wiring.
+            var touchSource = await OnMain(() => new NativeTouchSource(Path.Combine(Path.GetFullPath(args[4]), "libSDL3.so")));
+            void RawTouch(string action, long id, Vector2 position)
+            {
+                var clyde = Resolve(clydeType);
+                var pixels = Get(Get(ui, "RootControl")!, "PixelSize")!;
+                touchSource.Push(action, id, position / new Vector2(Number(pixels, "X"), Number(pixels, "Y")));
+                var process = clyde.GetType().GetMethod("ProcessInput")!;
+                process.Invoke(clyde, [Activator.CreateInstance(process.GetParameters()[0].ParameterType, [0f])]);
+            }
+            if (Environment.GetEnvironmentVariable("SS14_CHECK_INPUT") == "1")
+            {
+                await OnMain(() =>
+                {
+                    void Assert(bool success, string name)
+                    {
+                        if (!success) throw new Exception("SDL touch integration: " + name);
+                        Console.WriteLine("INPUT PASS " + name);
+                    }
+                    var stick = Descendants(overlay).Single(c => c.GetType().Name == "VirtualThumbstick");
+                    var centre = (Vector2)Get(stick, "GlobalPixelPosition")! + (Vector2)Get(stick, "PixelSize")! / 2;
+                    var inputType = client.GetType("Robust.Client.Input.IInputManager", true)!;
+                    var input = Resolve(inputType);
+                    var keyType = client.GetType("Robust.Client.Input.Keyboard+Key", true)!;
+                    bool Down(string key) => (bool)inputType.GetMethod("IsKeyDown")!.Invoke(input, [Enum.Parse(keyType, key)])!;
+                    RawTouch("Down", 800, centre + new Vector2(30, 0) * Number(stick, "UIScale"));
+                    Assert(Get(stick, "IsPressed") is true && Down("D"), "native SDL finger down reaches movement stick and original input");
+                    RawTouch("Motion", 800, centre + new Vector2(0, -30) * Number(stick, "UIScale"));
+                    Assert(Down("W") && !Down("D"), "native SDL finger motion turns movement");
+                    RawTouch("Up", 800, centre);
+                    Assert(Get(stick, "IsPressed") is false && !Down("W") && !Down("D"), "native SDL finger up releases movement");
+                    var menu = Descendants(Get(ui, "RootControl")!).Single(c => c.GetType().Name == "MainMenuControl");
+                    var options = Get(menu, "OptionsButton")!;
+                    var point = (Vector2)Get(options, "GlobalPixelPosition")! + (Vector2)Get(options, "PixelSize")! / 2;
+                    RawTouch("Down", 801, point);
+                    RawTouch("Up", 801, point);
+                    var window = Descendants(Get(ui, "RootControl")!).SingleOrDefault(c => c.GetType().Name == "OptionsMenu");
+                    Assert(window != null && Get(window, "VisibleInTree") is true, "native SDL tap opens original Options button");
+                    window!.GetType().GetMethod("Close")!.Invoke(window, null);
+                    return true;
+                });
+            }
             if (Environment.GetEnvironmentVariable("SS14_CHECK_CAMERA") == "1")
             {
                 await OnMain(() =>
@@ -157,18 +201,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     var clyde = Resolve(clydeType);
                     var windowId = Get(Get(clyde, "MainWindow")!, "Id")!;
                     var screenType = shared.GetType("Robust.Shared.Map.ScreenCoordinates", true)!;
-                    var fingerType = client.GetType("Robust.Client.Input.TouchFingerEventArgs", true)!;
-                    var actionType = client.GetType("Robust.Client.Input.TouchFingerAction", true)!;
-                    var emit = fingerType.GetProperty("EmitMouse", BindingFlags.NonPublic | BindingFlags.Instance)!;
-                    var dispatcher = Delegate.CreateDelegate(emit.PropertyType, clyde,
-                        clyde.GetType().GetMethod("DispatchTouchMouse", BindingFlags.NonPublic | BindingFlags.Instance)!);
-                    void Touch(string action, long id, Vector2 position)
-                    {
-                        var args = Activator.CreateInstance(fingerType, [Enum.Parse(actionType, action), id,
-                            Activator.CreateInstance(screenType, [position, windowId])])!;
-                        emit.SetValue(args, dispatcher);
-                        ui.GetType().GetMethod("TouchFinger")!.Invoke(ui, [args]);
-                    }
+                    void Touch(string action, long id, Vector2 position) => RawTouch(action, id, position);
                     var transform = client.GetType("Robust.Client.UserInterface.Mobile.MobileCameraTransform", true)!;
                     float Scale() => (float)transform.GetProperty("Magnification")!.GetValue(null)!;
                     float Rotation() => (float)transform.GetProperty("Rotation")!.GetValue(null)!;
@@ -323,3 +356,46 @@ return MobileLoader.Run([Path.GetFullPath(args[0]), args[1], Path.GetFullPath(ar
     "--cvar", "display.max_fps=10", "--cvar", "display.width=" + (Environment.GetEnvironmentVariable("SS14_VISUAL_WIDTH") ?? "2340"),
     "--cvar", "display.height=" + (Environment.GetEnvironmentVariable("SS14_VISUAL_HEIGHT") ?? "1080")],
     Path.GetFullPath(args[4]), (_, _) => { });
+
+// SDL3 SDL_Event is a 128-byte union. These offsets follow SDL_TouchFingerEvent
+// from the pinned SDL_events.h; no game/UI method or event handler is injected.
+sealed class NativeTouchSource
+{
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr GetWindows(out int count);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate uint GetWindowId(IntPtr window);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void FreeMemory(IntPtr memory);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate byte PushEvent(IntPtr data);
+    private readonly PushEvent _push;
+    private readonly uint _window;
+
+    public NativeTouchSource(string library)
+    {
+        var handle = NativeLibrary.Load(library);
+        T Function<T>(string name) where T : Delegate => Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(handle, name));
+        var windows = Function<GetWindows>("SDL_GetWindows")(out var count);
+        if (windows == IntPtr.Zero || count != 1) throw new Exception("Expected one real SDL game window.");
+        _window = Function<GetWindowId>("SDL_GetWindowID")(Marshal.ReadIntPtr(windows));
+        Function<FreeMemory>("SDL_free")(windows);
+        _push = Function<PushEvent>("SDL_PushEvent");
+    }
+
+    public void Push(string action, long finger, Vector2 normalized)
+    {
+        var type = action switch { "Down" => 0x700u, "Up" => 0x701u, "Motion" => 0x702u, "Cancel" => 0x703u, _ => throw new ArgumentException(action) };
+        var data = new byte[128];
+        BitConverter.TryWriteBytes(data.AsSpan(0), type);
+        BitConverter.TryWriteBytes(data.AsSpan(16), 1UL);
+        BitConverter.TryWriteBytes(data.AsSpan(24), finger);
+        BitConverter.TryWriteBytes(data.AsSpan(32), normalized.X);
+        BitConverter.TryWriteBytes(data.AsSpan(36), normalized.Y);
+        BitConverter.TryWriteBytes(data.AsSpan(48), action == "Up" ? 0f : 1f);
+        BitConverter.TryWriteBytes(data.AsSpan(52), _window);
+        var memory = Marshal.AllocHGlobal(data.Length);
+        try
+        {
+            Marshal.Copy(data, 0, memory, data.Length);
+            if (_push(memory) == 0) throw new Exception("SDL rejected injected touch event.");
+        }
+        finally { Marshal.FreeHGlobal(memory); }
+    }
+}

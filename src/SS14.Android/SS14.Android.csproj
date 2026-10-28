@@ -5,8 +5,8 @@
     <SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
     <ApplicationId>io.ss14.android</ApplicationId>
     <ApplicationTitle>Space Station 14</ApplicationTitle>
-    <ApplicationVersion>6</ApplicationVersion>
-    <ApplicationDisplayVersion>0.6.0-dev</ApplicationDisplayVersion>
+    <ApplicationVersion>7</ApplicationVersion>
+    <ApplicationDisplayVersion>0.6.1-dev</ApplicationDisplayVersion>
     <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
     <SS14NativeAbi>arm64-v8a</SS14NativeAbi>
     <SS14NativeAbi Condition="'$(RuntimeIdentifier)' == 'android-x64'">x86_64</SS14NativeAbi>

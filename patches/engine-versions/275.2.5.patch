@@ -249,10 +249,10 @@ index 3aab543..47d46d5 100644
              var envVar = Environment.GetEnvironmentVariable(envVarName);
              if (string.IsNullOrEmpty(envVar))
 diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/GameController/GameController.cs
-index 14f5770..a3fe4a6 100644
+index 60fabdc..ede61cf 100644
 --- a/Robust.Client/GameController/GameController.cs
 +++ b/Robust.Client/GameController/GameController.cs
-@@ -266,7 +266,9 @@ namespace Robust.Client
+@@ -265,7 +265,9 @@ namespace Robust.Client
  
              if (_configurationManager.GetCVar(CVars.SysGCCollectStart))
              {
@@ -263,6 +263,15 @@ index 14f5770..a3fe4a6 100644
                  GC.Collect();
              }
  
+@@ -478,6 +480,7 @@ namespace Robust.Client
+             _clyde.TextEntered += TextEntered;
+             _clyde.TextEditing += TextEditing;
+             _clyde.MouseMove += MouseMove;
++            _clyde.TouchFinger += _userInterfaceManager.TouchFinger;
+             _clyde.KeyUp += KeyUp;
+             _clyde.KeyDown += KeyDown;
+             _clyde.MouseWheel += MouseWheel;
+
 diff --git a/Robust.Client/Graphics/ClientEye/EyeManager.cs b/Robust.Client/Graphics/ClientEye/EyeManager.cs
 index 3734811..1fe7688 100644
 --- a/Robust.Client/Graphics/ClientEye/EyeManager.cs
