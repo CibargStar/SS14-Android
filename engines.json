@@ -1,70 +1,4 @@
 {
-  "294.0.1": {
-    "insecure": false,
-    "platforms": {
-      "android-arm64": {
-        "host_abi": 1,
-        "platform": "Android",
-        "runtime": "net10.0",
-        "upstream": "160be31f57129c24c1715b873b92f14d028de8b8",
-        "version": "294.0.1",
-        "sha256": "6000f3e50ebf6ddacf07363ad116d5bb5c8f13d759e6a651ea17a7ddd6676424",
-        "sig": "1959af41627fde9fe7ae47586f5e360f94436880c8730e225f37475c4d0258ea5ae622bfb4fb6cb99453d6d6c73e5aed3e3a39cfe7fe19bb37e65c0bfe6ee500",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-294.0.1.zip"
-      },
-      "android-x64": {
-        "host_abi": 1,
-        "platform": "Android",
-        "runtime": "net10.0",
-        "upstream": "160be31f57129c24c1715b873b92f14d028de8b8",
-        "version": "294.0.1",
-        "sha256": "6000f3e50ebf6ddacf07363ad116d5bb5c8f13d759e6a651ea17a7ddd6676424",
-        "sig": "1959af41627fde9fe7ae47586f5e360f94436880c8730e225f37475c4d0258ea5ae622bfb4fb6cb99453d6d6c73e5aed3e3a39cfe7fe19bb37e65c0bfe6ee500",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-294.0.1.zip"
-      }
-    }
-  },
-  "294.0.0": {
-    "insecure": false,
-    "platforms": {
-      "android-arm64": {
-        "version": "294.0.0",
-        "upstream": "3eeaf8253774ab59d705d453fe90ede75b84c607",
-        "runtime": "net10.0",
-        "platform": "Android",
-        "host_abi": 1,
-        "sha256": "f3d0b73929430522915be0dba954dfb9e4090a89acae3ff3fd5b8238dd122830",
-        "sig": "19dc4798ffa12c74720adda539edf426aecf5659508a2b8f9eb8a6f51901cde30844ec3fe45a84df2cd700c0a3259977e928fa897ffdbcd3904e44fbc2da6500",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-294.0.0.zip",
-        "patch": {
-          "sourceUrl": "https://robust-builds.playss14.com/builds/294.0.0/Robust.Client_linux-arm64.zip",
-          "sourceSha256": "FE0A923C04C238DA748E93CCDEA0FE0242A9DEFC9BA66AF2F3B5B6D5030FE065",
-          "sourceSignature": "1620BAE86A211E5F3EC25621BFCB9529473B445468CDB590D49CDE9AE84F4082A65193966A436FEC47E530E48DFEE2A23E534510ECAAF9A9197B7BB4F3E43B0A",
-          "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-294.0.0.ss14patch",
-          "sha256": "a896aaefe8cdba00cf5366def25216fba6cd3097b1f78484664bfba5352068d0",
-          "signature": "fab5d5091aff393349d18aa6c06ae8906e4ca2b4ec80cd94b31076c854851bc425d16f4d7b2226779af2d364c463f8b41768dd01ee3bd498647e8558b70f870e"
-        }
-      },
-      "android-x64": {
-        "version": "294.0.0",
-        "upstream": "3eeaf8253774ab59d705d453fe90ede75b84c607",
-        "runtime": "net10.0",
-        "platform": "Android",
-        "host_abi": 1,
-        "sha256": "f3d0b73929430522915be0dba954dfb9e4090a89acae3ff3fd5b8238dd122830",
-        "sig": "19dc4798ffa12c74720adda539edf426aecf5659508a2b8f9eb8a6f51901cde30844ec3fe45a84df2cd700c0a3259977e928fa897ffdbcd3904e44fbc2da6500",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-294.0.0.zip",
-        "patch": {
-          "sourceUrl": "https://robust-builds.playss14.com/builds/294.0.0/Robust.Client_linux-arm64.zip",
-          "sourceSha256": "FE0A923C04C238DA748E93CCDEA0FE0242A9DEFC9BA66AF2F3B5B6D5030FE065",
-          "sourceSignature": "1620BAE86A211E5F3EC25621BFCB9529473B445468CDB590D49CDE9AE84F4082A65193966A436FEC47E530E48DFEE2A23E534510ECAAF9A9197B7BB4F3E43B0A",
-          "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-294.0.0.ss14patch",
-          "sha256": "a896aaefe8cdba00cf5366def25216fba6cd3097b1f78484664bfba5352068d0",
-          "signature": "fab5d5091aff393349d18aa6c06ae8906e4ca2b4ec80cd94b31076c854851bc425d16f4d7b2226779af2d364c463f8b41768dd01ee3bd498647e8558b70f870e"
-        }
-      }
-    }
-  },
   "293.0.1": {
     "insecure": false,
     "platforms": {
@@ -74,9 +8,9 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "788210f9b2a8f3caf2e28a288fadb4261993c36bfb099faf678a8fc1d897c1a9",
-        "sig": "ce998db1409366c2792772b67431e7ebac72ed4ff6c13546170f55b4f95b2458e0caefab4f8ae3a468767001ff55e97c1ed715686bcf8d85490234307a868d01",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-293.0.1.zip"
+        "sha256": "5d3acc161184e1968c145b6206523d0139ef542dfc987fe131903892fc9a5e7f",
+        "sig": "7297396d1ade308823ce031e8477139a32d6bbc30c9a639d60a59a5c7ac901d3aa327c29978a7604ce512301b4822871ced901c1fba9f68712fcec3fd74c9c0a",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-293.0.1.zip"
       },
       "android-x64": {
         "version": "293.0.1",
@@ -84,34 +18,9 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "788210f9b2a8f3caf2e28a288fadb4261993c36bfb099faf678a8fc1d897c1a9",
-        "sig": "ce998db1409366c2792772b67431e7ebac72ed4ff6c13546170f55b4f95b2458e0caefab4f8ae3a468767001ff55e97c1ed715686bcf8d85490234307a868d01",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-293.0.1.zip"
-      }
-    }
-  },
-  "292.0.1": {
-    "insecure": false,
-    "platforms": {
-      "android-arm64": {
-        "version": "292.0.1",
-        "upstream": "26fc868a033836ae97389614f16298951b184df1",
-        "runtime": "net10.0",
-        "platform": "Android",
-        "host_abi": 1,
-        "sha256": "1d79924b3852372d05478181ee3b1b04414bfa18a388c7cff7dfd1fd23ddf616",
-        "sig": "075916e2f722e477d9c8f49fdaba70ba80b01d0a2e3a4f2ebfbb32354243cd8e7132db8cad4ff996a027f3c54c8b4edee5f39a03985a14ad64ca5494b1c17e03",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-292.0.1.zip"
-      },
-      "android-x64": {
-        "version": "292.0.1",
-        "upstream": "26fc868a033836ae97389614f16298951b184df1",
-        "runtime": "net10.0",
-        "platform": "Android",
-        "host_abi": 1,
-        "sha256": "1d79924b3852372d05478181ee3b1b04414bfa18a388c7cff7dfd1fd23ddf616",
-        "sig": "075916e2f722e477d9c8f49fdaba70ba80b01d0a2e3a4f2ebfbb32354243cd8e7132db8cad4ff996a027f3c54c8b4edee5f39a03985a14ad64ca5494b1c17e03",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-292.0.1.zip"
+        "sha256": "5d3acc161184e1968c145b6206523d0139ef542dfc987fe131903892fc9a5e7f",
+        "sig": "7297396d1ade308823ce031e8477139a32d6bbc30c9a639d60a59a5c7ac901d3aa327c29978a7604ce512301b4822871ced901c1fba9f68712fcec3fd74c9c0a",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-293.0.1.zip"
       }
     }
   },
@@ -124,9 +33,9 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "db2ceb1b1d5342fb440efb2c496d6a71387d68751840da1bb5ab257c2e4eb1ef",
-        "sig": "ebb6592b37313dab6fb0fe3f2f0e2a31e307956f5e219cae9d30f7ca780636dd833b1534156d288759551b6927e48c537c1dbada0fb73f56ccf402eb4e40c507",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-289.0.5.zip"
+        "sha256": "3b6ddd131ea028c779504794ea76f468d0f096f0fc63ed7e399fb38e2472b6c1",
+        "sig": "19d957539f86aa599e879779d057f463acc4dd5912c239551eff002e5bcc77f8b4d0e45a36c4fa48718e5e1687bed6e0bedd395f02d8e06becd155261897440f",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-289.0.5.zip"
       },
       "android-x64": {
         "version": "289.0.5",
@@ -134,9 +43,9 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "db2ceb1b1d5342fb440efb2c496d6a71387d68751840da1bb5ab257c2e4eb1ef",
-        "sig": "ebb6592b37313dab6fb0fe3f2f0e2a31e307956f5e219cae9d30f7ca780636dd833b1534156d288759551b6927e48c537c1dbada0fb73f56ccf402eb4e40c507",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-289.0.5.zip"
+        "sha256": "3b6ddd131ea028c779504794ea76f468d0f096f0fc63ed7e399fb38e2472b6c1",
+        "sig": "19d957539f86aa599e879779d057f463acc4dd5912c239551eff002e5bcc77f8b4d0e45a36c4fa48718e5e1687bed6e0bedd395f02d8e06becd155261897440f",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-289.0.5.zip"
       }
     }
   },
@@ -149,9 +58,9 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "238f026c28a5b9f7cdd5afb7020a67f97ea983cfedcebdabba2b585a94b755a7",
-        "sig": "f1f6c7d5be949cae6f52fe75b542844631d4df974cb6ce1ac0a46bc5eb3f90f1a0369e79100c853bb7b36ae56737a8995183391f97e4b4911d0756fa8b46000a",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-290.0.2.zip"
+        "sha256": "40cdd302ad2a63495cb9a710132ce93c09ed765d8466153a7b602ed1c0e1f55f",
+        "sig": "ae561b43811edccba142b652979608d837d47a1fe09b7b5f71663fb57bef66208237989ca0f0aaa04c57303dd984659356ad31d894d24af31db436f326c2c303",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-290.0.2.zip"
       },
       "android-x64": {
         "version": "290.0.2",
@@ -159,9 +68,100 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "238f026c28a5b9f7cdd5afb7020a67f97ea983cfedcebdabba2b585a94b755a7",
-        "sig": "f1f6c7d5be949cae6f52fe75b542844631d4df974cb6ce1ac0a46bc5eb3f90f1a0369e79100c853bb7b36ae56737a8995183391f97e4b4911d0756fa8b46000a",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-290.0.2.zip"
+        "sha256": "40cdd302ad2a63495cb9a710132ce93c09ed765d8466153a7b602ed1c0e1f55f",
+        "sig": "ae561b43811edccba142b652979608d837d47a1fe09b7b5f71663fb57bef66208237989ca0f0aaa04c57303dd984659356ad31d894d24af31db436f326c2c303",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-290.0.2.zip"
+      }
+    }
+  },
+  "292.0.1": {
+    "insecure": false,
+    "platforms": {
+      "android-arm64": {
+        "version": "292.0.1",
+        "upstream": "26fc868a033836ae97389614f16298951b184df1",
+        "runtime": "net10.0",
+        "platform": "Android",
+        "host_abi": 1,
+        "sha256": "0ebc6c371dd9de859edab9b10888dc407f465266026177f9e0d32cfd7c345b32",
+        "sig": "ca3552b1b4b1368b299cd9d14680df994704ef81397a5b539d8b7b5cf6c0b1f1da992c0bb7ef78d4956b8df52636d8106f0729b42f51aabc310ada524be6120a",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-292.0.1.zip"
+      },
+      "android-x64": {
+        "version": "292.0.1",
+        "upstream": "26fc868a033836ae97389614f16298951b184df1",
+        "runtime": "net10.0",
+        "platform": "Android",
+        "host_abi": 1,
+        "sha256": "0ebc6c371dd9de859edab9b10888dc407f465266026177f9e0d32cfd7c345b32",
+        "sig": "ca3552b1b4b1368b299cd9d14680df994704ef81397a5b539d8b7b5cf6c0b1f1da992c0bb7ef78d4956b8df52636d8106f0729b42f51aabc310ada524be6120a",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-292.0.1.zip"
+      }
+    }
+  },
+  "294.0.1": {
+    "insecure": false,
+    "platforms": {
+      "android-arm64": {
+        "version": "294.0.1",
+        "upstream": "cdf8d1258e8f9117b6a74fa80132143350250f16",
+        "runtime": "net10.0",
+        "platform": "Android",
+        "host_abi": 1,
+        "sha256": "cc47ceccb9bb100290a842fcbe6989429df010ca4b7648dc69aeead3d4d0131c",
+        "sig": "cecedeeb9c464e1faeba0cd7fc9826d122a038f8288664a4686119b862c1607cc5075526c36aec31c2455e22da57601716b15a2d4de2c8c5e7b228b527875307",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-294.0.1.zip"
+      },
+      "android-x64": {
+        "version": "294.0.1",
+        "upstream": "cdf8d1258e8f9117b6a74fa80132143350250f16",
+        "runtime": "net10.0",
+        "platform": "Android",
+        "host_abi": 1,
+        "sha256": "cc47ceccb9bb100290a842fcbe6989429df010ca4b7648dc69aeead3d4d0131c",
+        "sig": "cecedeeb9c464e1faeba0cd7fc9826d122a038f8288664a4686119b862c1607cc5075526c36aec31c2455e22da57601716b15a2d4de2c8c5e7b228b527875307",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-294.0.1.zip"
+      }
+    }
+  },
+  "294.0.0": {
+    "insecure": false,
+    "platforms": {
+      "android-arm64": {
+        "version": "294.0.0",
+        "upstream": "3eeaf8253774ab59d705d453fe90ede75b84c607",
+        "runtime": "net10.0",
+        "platform": "Android",
+        "host_abi": 1,
+        "sha256": "7f22eb45ef10b8c2fbaa71b425ca786f4554d269dc74ffb02defef003a8fb2ff",
+        "sig": "f2fc17d7d4e57464f352cdb5601bbbdd42e4757dde140c829b59d0d452c04bffea4f791fdd9ec6c2d77fbf2970dba900afca2a7ab618cfdb9276d84b6187de0e",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-294.0.0.zip",
+        "patch": {
+          "sourceUrl": "https://robust-builds.playss14.com/builds/294.0.0/Robust.Client_linux-arm64.zip",
+          "sourceSha256": "FE0A923C04C238DA748E93CCDEA0FE0242A9DEFC9BA66AF2F3B5B6D5030FE065",
+          "sourceSignature": "1620BAE86A211E5F3EC25621BFCB9529473B445468CDB590D49CDE9AE84F4082A65193966A436FEC47E530E48DFEE2A23E534510ECAAF9A9197B7BB4F3E43B0A",
+          "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-294.0.0.ss14patch",
+          "sha256": "c59513da05feb8db38d8093156f2e64c5a98a0d286b1a0a897aff4100b05a69e",
+          "signature": "e186af2afe2f7578e3da671b6b645a90a620eeb22f8701908749010fbb08fc27e1ed6da7bd690e8352c9f55acc03ace60a8798d461c2c18a1ff40fcdb65b3601"
+        }
+      },
+      "android-x64": {
+        "version": "294.0.0",
+        "upstream": "3eeaf8253774ab59d705d453fe90ede75b84c607",
+        "runtime": "net10.0",
+        "platform": "Android",
+        "host_abi": 1,
+        "sha256": "7f22eb45ef10b8c2fbaa71b425ca786f4554d269dc74ffb02defef003a8fb2ff",
+        "sig": "f2fc17d7d4e57464f352cdb5601bbbdd42e4757dde140c829b59d0d452c04bffea4f791fdd9ec6c2d77fbf2970dba900afca2a7ab618cfdb9276d84b6187de0e",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-294.0.0.zip",
+        "patch": {
+          "sourceUrl": "https://robust-builds.playss14.com/builds/294.0.0/Robust.Client_linux-arm64.zip",
+          "sourceSha256": "FE0A923C04C238DA748E93CCDEA0FE0242A9DEFC9BA66AF2F3B5B6D5030FE065",
+          "sourceSignature": "1620BAE86A211E5F3EC25621BFCB9529473B445468CDB590D49CDE9AE84F4082A65193966A436FEC47E530E48DFEE2A23E534510ECAAF9A9197B7BB4F3E43B0A",
+          "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-294.0.0.ss14patch",
+          "sha256": "c59513da05feb8db38d8093156f2e64c5a98a0d286b1a0a897aff4100b05a69e",
+          "signature": "e186af2afe2f7578e3da671b6b645a90a620eeb22f8701908749010fbb08fc27e1ed6da7bd690e8352c9f55acc03ace60a8798d461c2c18a1ff40fcdb65b3601"
+        }
       }
     }
   },
@@ -174,9 +174,9 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "16fa37ae7243d9e4a566ebb5171b5bcc0349bf0259583ba875885375539e62b6",
-        "sig": "9724c4dae4d5c601a4372d81bad5ea9376e91785d0250f617fc6ff08c1f49e46c3e740a98db7e84aed9157e64a0a65e63041941fa4a153b8a90db45c27c46a04",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-291.0.2.zip"
+        "sha256": "7d0c1597759b71e8fc60527195e321641c6b91a2178ba8d660b1511155208873",
+        "sig": "21b33d300634a118ab7589373a61f8f8008d7aaac57cc8f323d1915a362bdbe5e2c123105e6670ddce035780806c909f5027a26f9ff74deee633acbc4c322a01",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-291.0.2.zip"
       },
       "android-x64": {
         "version": "291.0.2",
@@ -184,9 +184,9 @@
         "runtime": "net10.0",
         "platform": "Android",
         "host_abi": 1,
-        "sha256": "16fa37ae7243d9e4a566ebb5171b5bcc0349bf0259583ba875885375539e62b6",
-        "sig": "9724c4dae4d5c601a4372d81bad5ea9376e91785d0250f617fc6ff08c1f49e46c3e740a98db7e84aed9157e64a0a65e63041941fa4a153b8a90db45c27c46a04",
-        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-1/Robust.Client.Android-291.0.2.zip"
+        "sha256": "7d0c1597759b71e8fc60527195e321641c6b91a2178ba8d660b1511155208873",
+        "sig": "21b33d300634a118ab7589373a61f8f8008d7aaac57cc8f323d1915a362bdbe5e2c123105e6670ddce035780806c909f5027a26f9ff74deee633acbc4c322a01",
+        "url": "https://github.com/CibargStar/SS14-Android/releases/download/android-engines-20261028-2/Robust.Client.Android-291.0.2.zip"
       }
     }
   }
