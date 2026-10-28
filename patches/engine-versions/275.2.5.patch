@@ -12,6 +12,30 @@ index f67e982..26ac1c6 100644
      <When Condition="'$(TargetOS)' == 'Windows'">
        <PropertyGroup>
          <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+diff --git a/Resources/Locale/en-US/mobile-display.ftl b/Resources/Locale/en-US/mobile-display.ftl
+new file mode 100644
+index 0000000..0273f47
+--- /dev/null
++++ b/Resources/Locale/en-US/mobile-display.ftl
+@@ -0,0 +1,6 @@
++mobile-display-title = Display and touch controls
++mobile-display-auto = Automatic interface scale
++mobile-display-scale = Interface scale: { $percent }%
++mobile-display-controls = Show touch controls
++mobile-display-reset = Reset display settings
++mobile-display-apply = Apply
+diff --git a/Resources/Locale/ru-RU/mobile-display.ftl b/Resources/Locale/ru-RU/mobile-display.ftl
+new file mode 100644
+index 0000000..c0a3606
+--- /dev/null
++++ b/Resources/Locale/ru-RU/mobile-display.ftl
+@@ -0,0 +1,6 @@
++mobile-display-title = Экран и сенсорное управление
++mobile-display-auto = Автоматический масштаб интерфейса
++mobile-display-scale = Масштаб интерфейса: { $percent }%
++mobile-display-controls = Показывать сенсорные кнопки
++mobile-display-reset = Сбросить настройки экрана
++mobile-display-apply = Применить
 diff --git a/Resources/Shaders/Internal/fov-lighting.swsl b/Resources/Shaders/Internal/fov-lighting.swsl
 index 91bd980..f42e010 100644
 --- a/Resources/Shaders/Internal/fov-lighting.swsl
@@ -986,48 +1010,17 @@ index e662046..b9e497a 100644
              // THIS IS NOT GUARANTEED TO HAVE ANY PARTICULARLY LOGICAL ORDERING.
              // E.G you could have atlas 1 RSIs appear *before* you're done seeing atlas 2 RSIs.
 diff --git a/Robust.Client/UserInterface/Control.Layout.cs b/Robust.Client/UserInterface/Control.Layout.cs
-index 2c7ef9c..d7f4f36 100644
+index 2c7ef9c..478597e 100644
 --- a/Robust.Client/UserInterface/Control.Layout.cs
 +++ b/Robust.Client/UserInterface/Control.Layout.cs
-@@ -40,6 +40,7 @@ namespace Robust.Client.UserInterface
-         private Thickness _margin;
-         private bool _measuring;
-         private bool _arranging;
-+        private bool _onlyPositionChanged;
- 
-         /// <summary>
-         /// The desired minimum size this control needs for layout to avoid cutting off content or such.
-@@ -651,6 +652,7 @@ namespace Robust.Client.UserInterface
- 
-                 if (!IsArrangeValid || PreviousArrange != finalRect)
-                 {
-+                    _onlyPositionChanged = IsArrangeValid && PreviousArrange.HasValue && PreviousArrange.Value.Size == finalRect.Size;
-                     IsArrangeValid = true;
-                     ArrangeCore(finalRect);
-                     PreviousArrange = finalRect;
-@@ -659,6 +661,7 @@ namespace Robust.Client.UserInterface
-             finally
-             {
-                 _arranging = false;
-+                _onlyPositionChanged = false;
-             }
-         }
- 
-@@ -686,9 +689,11 @@ namespace Robust.Client.UserInterface
- 
+@@ -687,7 +687,6 @@ namespace Robust.Client.UserInterface
              size = ApplySizeConstraints(this, size);
  
--            var arranged = ArrangeOverride(size);
+             var arranged = ArrangeOverride(size);
 -
--            size = Vector2.Min(arranged, size);
-+            if (!_onlyPositionChanged || size != Size)
-+            {
-+                var arranged = ArrangeOverride(size);
-+                size = Vector2.Min(arranged, size);
-+            }
+             size = Vector2.Min(arranged, size);
  
              switch (HorizontalAlignment)
-             {
 diff --git a/Robust.Client/UserInterface/Controls/ItemList.cs b/Robust.Client/UserInterface/Controls/ItemList.cs
 index b727287..0413d99 100644
 --- a/Robust.Client/UserInterface/Controls/ItemList.cs
@@ -1128,7 +1121,7 @@ index 4633b99..b74f173 100644
          _blink.Reset();
          EnsureCursorVisible();
 diff --git a/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs b/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs
-index 9e6568e..2f7f08d 100644
+index 9e6568e..8ece002 100644
 --- a/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs
 +++ b/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs
 @@ -58,7 +58,7 @@ namespace Robust.Client.UserInterface.CustomControls
@@ -1145,7 +1138,7 @@ index 9e6568e..2f7f08d 100644
  
          // TODO: Un-hard code this header size.
 -        private const float HEADER_SIZE_Y = 25;
-+        private static float HeaderSizeY => OperatingSystem.IsAndroid() ? 42f : 25f;
++        private const int HeaderSizeY = 25;
          protected virtual Vector2 ContentsMinimumSize => new Vector2(50, 50);
  
          protected override Vector2 MeasureOverride(Vector2 availableSize)
@@ -1177,10 +1170,10 @@ index 29c54bc..7d546ec 100644
 -
 diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
 new file mode 100644
-index 0000000..b4e80f4
+index 0000000..83926d3
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
-@@ -0,0 +1,1144 @@
+@@ -0,0 +1,1183 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Globalization;
@@ -1275,6 +1268,8 @@ index 0000000..b4e80f4
 +    private readonly PojavActionButton _keybButton;
 +    private readonly PojavActionButton _editButton;
 +    private readonly PojavActionButton _hideButton;
++    private readonly PojavActionButton _settingsButton;
++    private MobileDisplaySettingsWindow? _settingsWindow;
 +
 +    private readonly Control _clusterContainer;
 +    private readonly Control _topUtilityContainer;
@@ -1466,6 +1461,9 @@ index 0000000..b4e80f4
 +        _hideButton = CreateUtilityButton("HIDE", null, PojavSpecialAction.Custom, id: "hide");
 +        _hideButton.OnPressed = ToggleControlsVisibility;
 +
++        _settingsButton = CreateUtilityButton("UI", null, PojavSpecialAction.Custom, id: "display-settings");
++        _settingsButton.OnPressed = OpenDisplaySettings;
++
 +        AddChild(_modalOverlay);
 +
 +        _dialogPanel.PanelOverride = new StyleBoxFlat
@@ -1570,6 +1568,7 @@ index 0000000..b4e80f4
 +        LoadSavedLayout();
 +        UpdateStyling();
 +        DumpMobileDebugInfo();
++        _cfg.OnValueChanged(CVars.MobileControlsVisible, ControlsVisibilityChanged, true);
 +    }
 +
 +    private PojavActionButton CreateButton(
@@ -1842,19 +1841,49 @@ index 0000000..b4e80f4
 +
 +    private void ToggleControlsVisibility()
 +    {
-+        _controlsHidden = !_controlsHidden;
++        _cfg.SetCVar(CVars.MobileControlsVisible, _controlsHidden);
++        _cfg.SaveToFile();
++    }
++
++    public void OpenDisplaySettings()
++    {
++        if (_settingsWindow is { IsOpen: true }) return;
++        var window = new MobileDisplaySettingsWindow(_uiMgr.RootControl.Size);
++        _settingsWindow = window;
++        window.OnClose += () => { window.Dispose(); _settingsWindow = null; };
++        window.OpenCentered();
++    }
++
++    private void ControlsVisibilityChanged(bool visible)
++    {
++        _controlsHidden = !visible;
 +        _clusterContainer.Visible = !_controlsHidden;
 +        _editButton.Visible = !_controlsHidden;
-+        _hideButton.Text = _controlsHidden ? "SHOW" : "HIDE";
++        _escButton.Visible = !_controlsHidden;
++        _keybButton.Visible = !_controlsHidden;
++        _hideButton.Visible = !_controlsHidden;
++        _settingsButton.Visible = true;
 +
 +        if (_controlsHidden)
 +        {
++            if (IsEditMode) ToggleEditMode();
 +            _thumbstick.ReleaseStick();
 +            foreach (var btn in _allButtons)
 +            {
 +                btn.Release();
++                btn.ResetToggle();
 +            }
++            _claimedTouches.Clear();
++            ResetSecondaryMode();
++            ResetExamMode();
++            ResetPullMode();
++            _escButton.Release();
++            _keybButton.Release();
++            _editButton.Release();
++            _hideButton.Release();
 +        }
++        if (AppDomain.CurrentDomain.GetData("SS14_ANDROID_DISPLAY_SAVE") is Action<float, bool> save)
++            save(_cfg.GetCVar(CVars.DisplayUIScale), visible);
 +    }
 +
 +    public bool HandleTouch(TouchFingerEventArgs args)
@@ -1889,7 +1918,7 @@ index 0000000..b4e80f4
 +                    }
 +                }
 +
-+                PojavActionButton[] topBtns = [_editButton, _hideButton, _escButton, _keybButton];
++                PojavActionButton[] topBtns = [_editButton, _hideButton, _escButton, _keybButton, _settingsButton];
 +                foreach (var btn in topBtns)
 +                {
 +                    var btnPos = args.Coordinates.Position / btn.UIScale - btn.GlobalPosition;
@@ -2220,7 +2249,8 @@ index 0000000..b4e80f4
 +        _clusterContainer.Arrange(new UIBox2(Vector2.Zero, finalSize));
 +        _topUtilityContainer.Arrange(new UIBox2(Vector2.Zero, finalSize));
 +
-+        var scale = Math.Clamp(_cfg.GetCVar(CVars.MobileControlsScale), 0.6f, 3.0f);
++        var scale = MobileDisplaySizing.ControlsScale(UIScale, finalSize.Y * UIScale,
++            _cfg.GetCVar(CVars.MobileControlsScale));
 +        var stickScale = Math.Clamp(_cfg.GetCVar(CVars.MobileThumbstickScale), 0.5f, 2.0f);
 +
 +        var stickRadius = 75f * scale * stickScale;
@@ -2301,6 +2331,8 @@ index 0000000..b4e80f4
 +        var hideH = 28f * scale;
 +        var hideX = (finalSize.X - hideW) / 2f;
 +        ArrangeChild(_hideButton, new Vector2(hideX, 6f * scale), new Vector2(hideW, hideH), finalSize);
++        var settingsX = _controlsHidden ? (finalSize.X - topBtnW) / 2f : hideX - topBtnW - 12f * scale;
++        ArrangeChild(_settingsButton, new Vector2(settingsX, 6f * scale), new Vector2(topBtnW, topBtnH), finalSize);
 +
 +        if (_editorBarContainer.Visible)
 +        {
@@ -2323,6 +2355,95 @@ index 0000000..b4e80f4
 +        DumpArrangeDebugInfo(finalSize, Math.Clamp(_cfg.GetCVar(CVars.MobileControlsScale), 0.6f, 3.0f));
 +
 +        return finalSize;
++    }
++}
+diff --git a/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs b/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs
+new file mode 100644
+index 0000000..7a6d936
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs
+@@ -0,0 +1,57 @@
++using System;
++using System.Numerics;
++using Robust.Client.UserInterface.Controls;
++using Robust.Client.UserInterface.CustomControls;
++using Robust.Shared;
++using Robust.Shared.Configuration;
++using Robust.Shared.IoC;
++using Robust.Shared.Localization;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++public sealed partial class MobileDisplaySettingsWindow : DefaultWindow
++{
++    [Dependency] private IConfigurationManager _cfg = default!;
++
++    public MobileDisplaySettingsWindow(Vector2 available)
++    {
++        IoCManager.InjectDependencies(this);
++        Title = Loc.GetString("mobile-display-title");
++        MinSize = new Vector2(MathF.Min(420, MathF.Max(160, available.X - 24)),
++            MathF.Min(360, MathF.Max(120, available.Y - 24)));
++        MaxSize = Vector2.Max(new Vector2(160, 120), available - new Vector2(24));
++        var scroll = new ScrollContainer { HorizontalExpand = true, VerticalExpand = true };
++        Contents.AddChild(scroll);
++        var column = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical,
++            SeparationOverride = 12, Margin = new Robust.Shared.Maths.Thickness(12) };
++        scroll.AddChild(column);
++        var initial = _cfg.GetCVar(CVars.DisplayUIScale);
++        var automatic = new CheckBox { Text = Loc.GetString("mobile-display-auto"), Pressed = initial == 0 };
++        var value = new Label();
++        var slider = new Slider { MinValue = 25, MaxValue = 200, Value = initial > 0 ? initial * 100 : 100,
++            Rounded = true, MinHeight = 36, HorizontalExpand = true, Disabled = automatic.Pressed };
++        void UpdateLabel() => value.Text = automatic.Pressed ? Loc.GetString("mobile-display-auto") :
++            Loc.GetString("mobile-display-scale", ("percent", (int)slider.Value));
++        slider.OnValueChanged += _ => UpdateLabel();
++        automatic.OnToggled += _ => { slider.Disabled = automatic.Pressed; UpdateLabel(); };
++        column.AddChild(automatic);
++        column.AddChild(value);
++        column.AddChild(slider);
++        var show = new CheckBox { Text = Loc.GetString("mobile-display-controls"),
++            Pressed = _cfg.GetCVar(CVars.MobileControlsVisible) };
++        column.AddChild(show);
++        var reset = new Button { Text = Loc.GetString("mobile-display-reset") };
++        reset.OnPressed += _ => { automatic.Pressed = true; slider.Value = 100; show.Pressed = true; UpdateLabel(); };
++        column.AddChild(reset);
++        var apply = new Button { Text = Loc.GetString("mobile-display-apply") };
++        apply.OnPressed += _ =>
++        {
++            _cfg.SetCVar(CVars.DisplayUIScale, automatic.Pressed ? 0 : slider.Value / 100);
++            _cfg.SetCVar(CVars.MobileControlsVisible, show.Pressed);
++            _cfg.SaveToFile();
++            Close();
++        };
++        column.AddChild(apply);
++        UpdateLabel();
++    }
++}
+diff --git a/Robust.Client/UserInterface/Mobile/MobileDisplaySizing.cs b/Robust.Client/UserInterface/Mobile/MobileDisplaySizing.cs
+new file mode 100644
+index 0000000..b4d5757
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileDisplaySizing.cs
+@@ -0,0 +1,20 @@
++using System;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++public static class MobileDisplaySizing
++{
++    public static float UiScale(int width, int height, float selectedScale)
++    {
++        if (float.IsFinite(selectedScale) && selectedScale > 0)
++            return Math.Clamp(selectedScale, 0.25f, 3f);
++        if (width <= 0 || height <= 0) return 1;
++        return Math.Clamp(Math.Min(width / 1280f, height / 720f), 0.25f, 3f);
++    }
++
++    public static float ControlsScale(float uiScale, float pixelHeight, float selectedScale)
++    {
++        var responsive = Math.Clamp(pixelHeight / 1080f, 0.4f, 2f);
++        return Math.Clamp(selectedScale, 0.6f, 3f) * responsive / Math.Clamp(uiScale, 0.25f, 3f);
 +    }
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/PojavActionButton.cs b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
@@ -3174,6 +3295,65 @@ index 274aa2a..f8a5fe9 100644
 +        }
 +    }
  }
+diff --git a/Robust.Client/UserInterface/UserInterfaceManager.Scaling.cs b/Robust.Client/UserInterface/UserInterfaceManager.Scaling.cs
+index 56d96c1..3e7873c 100644
+--- a/Robust.Client/UserInterface/UserInterfaceManager.Scaling.cs
++++ b/Robust.Client/UserInterface/UserInterfaceManager.Scaling.cs
+@@ -1,4 +1,5 @@
+ ﻿using System;
++using System.Globalization;
+ using Robust.Client.Graphics;
+ using Robust.Client.UserInterface.Controls;
+ using Robust.Shared;
+@@ -10,7 +11,9 @@ namespace Robust.Client.UserInterface;
+ 
+ internal partial class UserInterfaceManager
+ {
+-    [ViewVariables] public float DefaultUIScale => _clyde.DefaultWindowScale.X;
++    [ViewVariables] public float DefaultUIScale => OperatingSystem.IsAndroid() && _clyde.MainWindow is { } window
++        ? Mobile.MobileDisplaySizing.UiScale(window.RenderTarget.Size.X, window.RenderTarget.Size.Y, 0)
++        : _clyde.DefaultWindowScale.X;
+     [ViewVariables] private Vector2i _resolutionAutoScaleUpper;
+     [ViewVariables] private Vector2i _resolutionAutoScaleLower;
+     [ViewVariables] private bool _autoScaleEnabled;
+@@ -18,6 +21,15 @@ internal partial class UserInterfaceManager
+ 
+     private void _initScaling()
+     {
++        if (OperatingSystem.IsAndroid())
++        {
++            if (float.TryParse(Environment.GetEnvironmentVariable("ROBUST_ANDROID_UI_SCALE"),
++                    NumberStyles.Float, CultureInfo.InvariantCulture, out var selectedScale))
++                _configurationManager.SetCVar(CVars.DisplayUIScale,
++                    selectedScale <= 0 ? 0 : Math.Clamp(selectedScale, 0.25f, 3f));
++            if (bool.TryParse(Environment.GetEnvironmentVariable("ROBUST_ANDROID_SHOW_CONTROLS"), out var show))
++                _configurationManager.SetCVar(CVars.MobileControlsVisible, show);
++        }
+         _clyde.OnWindowResized += WindowSizeChanged;
+         _clyde.OnWindowScaleChanged += WindowContentScaleChanged;
+         RegisterAutoscaleCVarListeners();
+@@ -31,6 +43,8 @@ internal partial class UserInterfaceManager
+             {
+                 UpdateUIScale(root);
+             }
++            if (OperatingSystem.IsAndroid() && AppDomain.CurrentDomain.GetData("SS14_ANDROID_DISPLAY_SAVE") is Action<float, bool> save)
++                save(newValue, _configurationManager.GetCVar(CVars.MobileControlsVisible));
+         }
+ 
+         private void WindowContentScaleChanged(WindowContentScaleEventArgs args)
+@@ -106,6 +120,12 @@ internal partial class UserInterfaceManager
+ 
+         private float CalculateAutoScale(WindowRoot root)
+         {
++            if (OperatingSystem.IsAndroid() || _configurationManager.GetCVar(CVars.MobileTouchControls))
++            {
++                var pixels = root.Window.RenderTarget.Size;
++                return Mobile.MobileDisplaySizing.UiScale(pixels.X, pixels.Y,
++                    _configurationManager.GetCVar(CVars.DisplayUIScale));
++            }
+             //Grab the OS UIScale or the value set through CVAR debug
+             var osScale = CalculateUIScale(root.Window.ContentScale.X, _configurationManager);
+ 
 diff --git a/Robust.Client/UserInterface/UserInterfaceManager.cs b/Robust.Client/UserInterface/UserInterfaceManager.cs
 index 4c2c669..85f8000 100644
 --- a/Robust.Client/UserInterface/UserInterfaceManager.cs
@@ -3280,10 +3460,10 @@ index 9ebcaad..5aab3f1 100644
  
  #if LINUX
 diff --git a/Robust.Shared/CVars.cs b/Robust.Shared/CVars.cs
-index e6c6a8b..9583ab6 100644
+index e6c6a8b..ece08e1 100644
 --- a/Robust.Shared/CVars.cs
 +++ b/Robust.Shared/CVars.cs
-@@ -1225,6 +1225,36 @@ namespace Robust.Shared
+@@ -1225,6 +1225,39 @@ namespace Robust.Shared
          public static readonly CVarDef<bool> DisplayWin32Experience =
              CVarDef.Create("display.win32_experience", false, CVar.CLIENTONLY);
  
@@ -3304,6 +3484,9 @@ index e6c6a8b..9583ab6 100644
 +        /// </summary>
 +        public static readonly CVarDef<float> MobileControlsScale =
 +            CVarDef.Create("mobile.controls_scale", 2.0f, CVar.CLIENTONLY | CVar.ARCHIVE);
++
++        public static readonly CVarDef<bool> MobileControlsVisible =
++            CVarDef.Create("mobile.controls_visible", true, CVar.CLIENTONLY | CVar.ARCHIVE);
 +
 +        /// <summary>
 +        /// Persistent custom layout positions for on-screen touch controls.
