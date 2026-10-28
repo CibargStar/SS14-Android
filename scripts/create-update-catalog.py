@@ -41,8 +41,13 @@ for alias, info in official.items():
         if target in seen: break
         seen.add(target)
         target = official[target]['redirect']
-    if alias != target and target in concrete and not info.get('insecure'):
-        catalog[alias] = dict(insecure=False, redirect=target, platforms={})
+    # Upstream marks obsolete binaries insecure while redirecting their version
+    # to a repaired release. Preserve that flag and the authorized redirect:
+    # the original launcher follows it before checking the final target.
+    # Never expose the revoked binary itself or invent a replacement version.
+    if (alias != target and target in concrete and not official[target].get('insecure')
+            and not official[target].get('redirect')):
+        catalog[alias] = dict(insecure=bool(info.get('insecure')), redirect=target, platforms={})
 args.output.parent.mkdir(parents=True, exist_ok=True)
 args.output.write_text(json.dumps(catalog, indent=2) + '\n')
 print(f'Published catalog: {len(concrete)} exact engines, {len(catalog) - len(concrete)} upstream redirects.')

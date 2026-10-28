@@ -23,6 +23,8 @@ jobs:
       matrix: ${{ steps.select.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check authorized engine catalog redirects
+        run: python3 -m unittest discover -s tests -p test_update_catalog.py
       - id: select
         env:
           SCOPE: ${{ inputs.scope }}

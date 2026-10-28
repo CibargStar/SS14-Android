@@ -26,6 +26,9 @@ internal static class EngineInstallChecks
             ["0.0.1001"] = Version(hash, signature),
             ["0.0.1002"] = Version(new string('0', 64), signature),
             ["0.0.1003"] = Version(hash, new string('0', 128)),
+            ["obsolete-alias"] = new { insecure = true, redirect = "0.0.1001", platforms = new { } },
+            ["revoked-target"] = new { insecure = true, platforms = new { } },
+            ["unsafe-alias"] = new { insecure = true, redirect = "revoked-target", platforms = new { } },
             ["loop-a"] = new { redirect = "loop-b", platforms = new { } },
             ["loop-b"] = new { redirect = "loop-a", platforms = new { } },
             ["missing-target"] = new { redirect = "not-published", platforms = new { } },
@@ -43,6 +46,13 @@ internal static class EngineInstallChecks
         check(first.Changed && File.Exists(manager.GetEnginePath("0.0.1001")), "signed engine installed atomically");
         var second = await manager.DownloadEngineIfNecessary("0.0.1001");
         check(!second.Changed && downloads == 1, "installed engine reused without downloading again");
+        var redirected = await manager.DownloadEngineIfNecessary("obsolete-alias");
+        check(redirected.Version == "0.0.1001" && !redirected.Changed && downloads == 1,
+            "official redirect from a revoked old binary uses the signed safe target");
+        var unsafeRedirectRejected = false;
+        try { await manager.DownloadEngineIfNecessary("unsafe-alias"); }
+        catch (UpdateException) { unsafeRedirectRejected = true; }
+        check(unsafeRedirectRejected && downloads == 1, "redirect cannot make a revoked target executable");
         foreach (var version in new[] { "0.0.1002", "0.0.1003" })
         {
             var rejected = false;
