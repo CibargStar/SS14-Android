@@ -2379,10 +2379,10 @@ index 0000000..83926d3
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs b/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs
 new file mode 100644
-index 0000000..8eb368b
+index 0000000..7a6d936
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,57 @@
 +using System;
 +using System.Numerics;
 +using Robust.Client.UserInterface.Controls;
@@ -2402,7 +2402,8 @@ index 0000000..8eb368b
 +    {
 +        IoCManager.InjectDependencies(this);
 +        Title = Loc.GetString("mobile-display-title");
-+        MinSize = new Vector2(MathF.Min(420, MathF.Max(160, available.X - 24)), 0);
++        MinSize = new Vector2(MathF.Min(420, MathF.Max(160, available.X - 24)),
++            MathF.Min(360, MathF.Max(120, available.Y - 24)));
 +        MaxSize = Vector2.Max(new Vector2(160, 120), available - new Vector2(24));
 +        var scroll = new ScrollContainer { HorizontalExpand = true, VerticalExpand = true };
 +        Contents.AddChild(scroll);

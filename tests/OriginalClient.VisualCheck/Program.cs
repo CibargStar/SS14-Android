@@ -84,6 +84,19 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     foreach (var box in boxes)
                         if (box.x < -1 || box.y < -1 || box.x + box.w > width + 1 || box.y + box.h > height + 1)
                             throw new Exception("Touch control outside viewport: " + box.text);
+                    for (var a = 0; a < boxes.Length; a++)
+                    for (var b = a + 1; b < boxes.Length; b++)
+                        if (MathF.Min(boxes[a].x + boxes[a].w, boxes[b].x + boxes[b].w) - MathF.Max(boxes[a].x, boxes[b].x) > 1 &&
+                            MathF.Min(boxes[a].y + boxes[a].h, boxes[b].y + boxes[b].h) - MathF.Max(boxes[a].y, boxes[b].y) > 1)
+                            throw new Exception("Overlapping touch controls: " + boxes[a].text + "/" + boxes[b].text);
+                    if (name == "controls-hidden" && (boxes.Length != 1 || boxes[0].text != "UI"))
+                        throw new Exception("Hidden controls remain interactive or the restore button is missing.");
+                    if (name == "display-settings")
+                    {
+                        var dialog = Descendants(root).Single(c => c.GetType().Name == "MobileDisplaySettingsWindow");
+                        if (Number(Get(dialog, "PixelSize")!, "Y") < 200 * Number(root, "UIScale"))
+                            throw new Exception("Display settings content is collapsed.");
+                    }
                     File.WriteAllText(Path.Combine(outputDirectory, name + ".json"),
                         JsonSerializer.Serialize(new { width, height, uiScale = Get(root, "UIScale"), boxes },
                             new JsonSerializerOptions { WriteIndented = true }));
@@ -108,9 +121,12 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 var configType = shared.GetType("Robust.Shared.Configuration.IConfigurationManager", true)!;
                 var config = Resolve(configType);
                 var definition = shared.GetType("Robust.Shared.CVars", true)!.GetField("MobileControlsVisible")!.GetValue(null);
-                configType.GetMethods().Single(m => m.Name == "SetCVar" && m.IsGenericMethodDefinition &&
-                    m.GetParameters()[0].ParameterType.IsGenericType).MakeGenericMethod(typeof(bool))
-                    .Invoke(config, [definition, false]);
+                var setter = configType.GetMethods().Single(m => m.Name == "SetCVar" && m.IsGenericMethodDefinition &&
+                    m.GetParameters()[0].ParameterType.IsGenericType).MakeGenericMethod(typeof(bool));
+                var values = setter.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : Type.Missing).ToArray();
+                values[0] = definition;
+                values[1] = false;
+                setter.Invoke(config, values);
                 foreach (var window in Descendants(Get(ui, "RootControl")!).Where(c => c.GetType().Name == "MobileDisplaySettingsWindow").ToArray())
                     window.GetType().GetMethod("Close")!.Invoke(window, null);
                 return true;
