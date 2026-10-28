@@ -146,6 +146,8 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     var stateRoot = Get(ui, "StateRoot")!;
                     stateRoot.GetType().GetProperty("Visible")!.SetValue(stateRoot, false);
                     var viewport = Get(ui, "MainViewport")!;
+                    var viewportWasVisible = (bool)Get(viewport, "Visible")!;
+                    viewport.GetType().GetProperty("Visible")!.SetValue(viewport, true);
                     var available = (Vector2)Get(Get(ui, "RootControl")!, "Size")!;
                     viewport.GetType().GetMethod("Measure")!.Invoke(viewport, [available]);
                     var arrange = viewport.GetType().GetMethod("Arrange")!;
@@ -229,6 +231,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     transform.GetMethod("Apply")!.Invoke(null, [.01f, -MathF.PI / 2]);
                     Assert(Scale() == 1 && MathF.Abs(Rotation()) < .001f, "pinch back restores the baseline view");
                     eyesType.GetProperty("CurrentEye")!.SetValue(eyes, oldEye);
+                    viewport.GetType().GetProperty("Visible")!.SetValue(viewport, viewportWasVisible);
                     stateRoot.GetType().GetProperty("Visible")!.SetValue(stateRoot, true);
                     return true;
                 });

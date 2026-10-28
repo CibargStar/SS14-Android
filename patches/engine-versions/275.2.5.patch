@@ -394,8 +394,7 @@ diff --git a/Robust.Client/Graphics/Clyde/Clyde.Viewport.cs b/Robust.Client/Grap
 index efbc345..e688b2f 100644
 --- a/Robust.Client/Graphics/Clyde/Clyde.Viewport.cs
 +++ b/Robust.Client/Graphics/Clyde/Clyde.Viewport.cs
-@@ -254,3 +254,8 @@ namespace Robust.Client.Graphics.Clyde
-             IRenderTexture IClydeViewport.LightRenderTarget => LightRenderTarget;
+@@ -255,2 +255,7 @@ namespace Robust.Client.Graphics.Clyde
 -            public IEye? Eye { get; set; }
 +            private IEye? _eye;
 +            public IEye? Eye
@@ -404,6 +403,7 @@ index efbc345..e688b2f 100644
 +                set => _eye = value;
 +            }
          }
+
 diff --git a/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs b/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
 index 62cb3cd..7b7075b 100644
 --- a/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
