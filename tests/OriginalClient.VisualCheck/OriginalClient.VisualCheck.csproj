@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../upstream/SS14.Launcher/SS14.Loader/SS14.Loader.csproj" AdditionalProperties="AndroidLauncher=true" />
+  </ItemGroup>
+</Project>
