@@ -1,0 +1,47 @@
+name: Package matching local test server
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Computer running the test server
+        type: choice
+        options: [win-x64, linux-x64, osx-arm64, osx-x64]
+        default: win-x64
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: space-wizards/space-station-14
+          ref: 5758de66ded8251d09087b3cda0cd0bf9a854aa3
+          path: content/space-station-14
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Select matching original engine 294.0.1
+        working-directory: content/space-station-14/RobustToolbox
+        run: |
+          git fetch --depth 1 origin 160be31f57129c24c1715b873b92f14d028de8b8
+          git checkout --detach FETCH_HEAD
+          git submodule update --init --recursive
+      - name: Package original server and downloadable original client content
+        working-directory: content/space-station-14
+        run: >-
+          dotnet run --project Content.Packaging -c Release --
+          server --platform ${{ inputs.platform }} --hybrid-acz
+      - name: Include local network configuration and launch instructions
+        run: |
+          python3 scripts/add-local-server-config.py content/space-station-14/release/SS14.Server_${{ inputs.platform }}.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ss14-local-server-${{ inputs.platform }}-294.0.1
+          path: content/space-station-14/release/SS14.Server_${{ inputs.platform }}.zip
+          retention-days: 14
