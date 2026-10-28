@@ -152,6 +152,14 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     Assert(Down("S") && Get(stick, "IsPressed") is true, "old gesture release cannot stop a new gesture");
                     Up(33);
                     Assert(!Down("W") && !Down("A") && !Down("S") && !Down("D"), "finger lift leaves no movement keys held");
+                    var state = stick.GetType().GetField("_stick", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(stick)!;
+                    state.GetType().GetMethod("Press")!.Invoke(state, [null, new Vector2(30, 0), 10f, 43f]);
+                    stick.GetType().GetMethod("ApplyMovement", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(stick, null);
+                    var focused = ui.GetType().GetProperty("ControlFocused")!;
+                    focused.SetValue(ui, stick);
+                    focused.SetValue(ui, null);
+                    Assert(!Down("D") && Get(stick, "IsPressed") is false && focused.GetValue(ui) == null,
+                        "mouse capture loss releases movement without re-entering focus setters");
                     return true;
                 });
             }

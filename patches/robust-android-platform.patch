@@ -2957,7 +2957,7 @@ index 0000000..7765ffc
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
 new file mode 100644
-index 0000000..7520d20
+index 0000000..772ce6e
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
 @@ -0,0 +1,308 @@
@@ -3078,7 +3078,7 @@ index 0000000..7520d20
 +        {
 +            _dragTouchOffset = null;
 +        }
-+        else if (_activeFingerId == null)
++        else if (_isPressed && _activeFingerId == null)
 +        {
 +            ReleaseStick();
 +        }
