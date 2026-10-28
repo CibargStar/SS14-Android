@@ -2,16 +2,41 @@ name: Build exact Android engine versions
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Exact upstream engine versions to build
+        type: choice
+        options: [recent, observed-hub]
+        default: recent
 
 permissions:
   contents: read
 
 jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: select
+        env:
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          recent = ['294.0.0', '293.0.1', '292.0.1', '290.0.2', '289.0.5']
+          versions = list(json.load(open('docs/engine-versions-observed.json'))['canonical_after_official_redirects']) if os.environ['SCOPE'] == 'observed-hub' else recent
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('matrix=' + json.dumps(versions) + '\n')
+          PY
   engine:
+    needs: versions
     strategy:
       fail-fast: false
+      max-parallel: 5
       matrix:
-        version: ['294.0.0', '293.0.1', '292.0.1', '290.0.2', '289.0.5']
+        version: ${{ fromJSON(needs.versions.outputs.matrix) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
