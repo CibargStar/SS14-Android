@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
+    <ApplicationId>io.ss14.android</ApplicationId>
+    <ApplicationTitle>Space Station 14</ApplicationTitle>
+    <ApplicationVersion>2</ApplicationVersion>
+    <ApplicationDisplayVersion>0.2.0-dev</ApplicationDisplayVersion>
+    <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+    <SS14NativeAbi>arm64-v8a</SS14NativeAbi>
+    <SS14NativeAbi Condition="'$(RuntimeIdentifier)' == 'android-x64'">x86_64</SS14NativeAbi>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <PublishTrimmed>false</PublishTrimmed>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <UseInterpreter>false</UseInterpreter>
+    <AndroidUseInterpreter>false</AndroidUseInterpreter>
+    <AndroidAvoidEmitForPerformance>false</AndroidAvoidEmitForPerformance>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ppy.SDL3-CS" Version="2026.629.0" Aliases="ppysdl" ExcludeAssets="native" />
+    <PackageReference Include="Avalonia.Android" Version="11.3.22" />
+    <PackageReference Include="libsodium" Version="1.0.20.1" ExcludeAssets="native" />
+    <ProjectReference Include="../../upstream/SS14.Launcher/SS14.Launcher/SS14.Launcher.csproj" AdditionalProperties="AndroidLauncher=true" />
+    <ProjectReference Include="../../upstream/SS14.Launcher/SS14.Loader/SS14.Loader.csproj" AdditionalProperties="AndroidLauncher=true" />
+    <AndroidNativeLibrary Include="../../artifacts/native/$(SS14NativeAbi)/libSDL3.so" />
+    <AndroidNativeLibrary Include="../../artifacts/native/$(SS14NativeAbi)/libopenal.so" />
+    <AndroidNativeLibrary Include="../../artifacts/native/$(SS14NativeAbi)/libfreetype.so" />
+    <AndroidAsset Include="../../upstream/SS14.Launcher/SS14.Launcher/signing_key" Link="signing_key" />
+    <AndroidAsset Include="../../artifacts/engines/bundled-manifest.json" Link="engines/manifest.json" />
+    <AndroidAsset Include="../../artifacts/engines/Robust.Client.Android-*.zip" Link="engines/%(Filename)%(Extension)" />
+    <AndroidAsset Include="../../artifacts/engines/android-engine-development.pub" Link="android_signing_key" />
+    <AndroidNativeLibrary Include="../../artifacts/native/$(SS14NativeAbi)/libzstd.so" />
+    <AndroidNativeLibrary Include="../../artifacts/native/$(SS14NativeAbi)/libsodium.so" />
+  </ItemGroup>
+  <Target Name="IncludeAndroidVerifierMetadata" AfterTargets="ResolveRuntimePackAssets">
+    <ItemGroup>
+      <AndroidAsset Include="@(RuntimePackAsset)" Condition="('%(RuntimePackAsset.AssetType)' == 'runtime' Or '%(RuntimePackAsset.Filename)' == 'System.Private.CoreLib') And '%(RuntimePackAsset.Extension)' == '.dll'">
+        <Link>verification/%(Filename)%(Extension)</Link>
+      </AndroidAsset>
+    </ItemGroup>
+  </Target>
+</Project>

@@ -1,0 +1,153 @@
+using Android.App;
+using Android.OS;
+using Android.Views;
+using Android.Widget;
+using SS14.Launcher.Core;
+using OperationCanceledException = System.OperationCanceledException;
+
+[assembly: UsesPermission(Android.Manifest.Permission.Internet)]
+[assembly: UsesPermission(Android.Manifest.Permission.AccessNetworkState)]
+[assembly: Application(UsesCleartextTraffic = true, Label = "Space Station 14")]
+
+namespace SS14.Android;
+
+[Activity(Name = "io.ss14.android.MainActivity", Label = "Space Station 14", MainLauncher = true, Exported = true)]
+public sealed class MainActivity : Activity
+{
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly CancellationTokenSource _lifetime = new();
+    private HubClient _hub = null!;
+    private FavoritesStore _store = null!;
+    private HashSet<string> _favorites = new(StringComparer.Ordinal);
+    private ServerEntry[] _servers = [];
+    private EditText _search = null!;
+    private EditText _address = null!;
+    private TextView _status = null!;
+    private LinearLayout _rows = null!;
+    private bool _favoritesOnly;
+    private bool _refreshing;
+    private CancellationTokenSource? _openRequest;
+
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+        base.OnCreate(savedInstanceState);
+        _hub = new HubClient(_http);
+        _store = new FavoritesStore(Path.Combine(FilesDir!.AbsolutePath, "favorites.json"));
+        try { _favorites = new HashSet<string>(_store.Load(), StringComparer.Ordinal); }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException) { Toast.MakeText(this, "Не удалось прочитать избранное.", ToastLength.Long)!.Show(); }
+        var page = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        page.SetPadding(20, 12, 20, 12);
+        _status = new TextView(this) { Text = "Space Station 14", TextSize = 20 };
+        page.AddView(_status);
+        _search = new EditText(this) { Hint = "Поиск по названию, адресу или тегам" };
+        _search.SetSingleLine(true);
+        _search.TextChanged += (_, _) => Render();
+        page.AddView(_search);
+        var controls = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        var refresh = new Button(this) { Text = "Обновить" };
+        refresh.Click += async (_, _) => await RefreshAsync();
+        var favorites = new ToggleButton(this) { TextOn = "Избранное", TextOff = "Все серверы" };
+        favorites.CheckedChange += (_, args) => { _favoritesOnly = args.IsChecked; Render(); };
+        controls.AddView(refresh); controls.AddView(favorites); page.AddView(controls);
+        _address = new EditText(this) { Hint = "ss14://адрес:порт" };
+        _address.SetSingleLine(true);
+        page.AddView(_address);
+        var direct = new Button(this) { Text = "Открыть сервер по адресу" };
+        direct.Click += async (_, _) => await OpenAsync(_address.Text ?? "", false);
+        page.AddView(direct);
+        var scroll = new ScrollView(this);
+        _rows = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        scroll.AddView(_rows);
+        page.AddView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1));
+        SetContentView(page);
+        if (savedInstanceState?.GetString("address") is { } address) _address.Text = address;
+        _ = RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_refreshing) return;
+        _refreshing = true;
+        _status.Text = "Загрузка серверов…";
+        try
+        {
+            _servers = await _hub.GetServersAsync(_lifetime.Token);
+            _status.Text = $"Серверов в хабе: {_servers.Length}";
+            Render();
+        }
+        catch (OperationCanceledException) { if (!_lifetime.IsCancellationRequested) _status.Text = "Хаб не ответил вовремя. Повторите обновление."; }
+        catch (Exception e) when (e is HttpRequestException or System.Text.Json.JsonException or InvalidDataException)
+        { _status.Text = e.Message; Render(); }
+        finally { _refreshing = false; }
+    }
+
+    private void Render()
+    {
+        _rows.RemoveAllViews();
+        var query = _search.Text?.Trim() ?? "";
+        IEnumerable<ServerEntry> candidates = _servers;
+        if (_favoritesOnly)
+            candidates = candidates.Concat(_favorites.Where(a => !_servers.Any(s => Normalize(s.Address).Equals(a, StringComparison.Ordinal)))
+                .Select(a => new ServerEntry(a, null)));
+        foreach (var entry in candidates.Where(s => (!_favoritesOnly || _favorites.Contains(Normalize(s.Address))) &&
+                     ((s.StatusData?.Name ?? "").Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                      s.Address.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                      (s.StatusData?.Tags ?? []).Any(t => t.Contains(query, StringComparison.OrdinalIgnoreCase))))
+                 .OrderByDescending(s => s.StatusData?.Players ?? 0))
+        {
+            var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+            var star = new Button(this) { Text = _favorites.Contains(Normalize(entry.Address)) ? "★" : "☆" };
+            star.Click += (_, _) => ToggleFavorite(entry.Address);
+            var open = new Button(this) { Text = $"{entry.StatusData?.Name ?? entry.Address}\n{entry.StatusData?.Players ?? 0}/{entry.StatusData?.Capacity ?? 0}  {entry.Address}" };
+            open.Click += async (_, _) => await OpenAsync(entry.Address, true);
+            row.AddView(star); row.AddView(open, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1));
+            _rows.AddView(row);
+        }
+    }
+
+    private static string Normalize(string address)
+    {
+        try { return ServerAddress.Parse(address).AbsoluteUri; }
+        catch (FormatException) { return address; }
+    }
+
+    private void ToggleFavorite(string address)
+    {
+        var next = new HashSet<string>(_favorites, StringComparer.Ordinal);
+        if (!next.Add(Normalize(address))) next.Remove(Normalize(address));
+        try { _store.Save(next); _favorites = next; Render(); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException)
+        { Toast.MakeText(this, "Не удалось сохранить избранное: " + e.Message, ToastLength.Long)!.Show(); }
+    }
+
+    private async Task OpenAsync(string address, bool listed)
+    {
+        _openRequest?.Cancel();
+        _openRequest?.Dispose();
+        _openRequest = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        var cancel = _openRequest.Token;
+        try
+        {
+            var uri = ServerAddress.Parse(address);
+            _status.Text = "Получение сборки сервера…";
+            var info = await _hub.GetInfoAsync(uri, listed, cancel);
+            cancel.ThrowIfCancellationRequested();
+            var request = ContentRequest.Create(uri, info);
+            _status.Text = "Данные сервера получены";
+            // Until engine/bootstrap integration is complete, never present this as a successful connection.
+            new AlertDialog.Builder(this)!.SetTitle(uri.Host)!
+                .SetMessage($"{info.Description}\n\nСборка: {request.ForkId} / {request.ContentVersion}\nДвижок: {request.EngineVersion}\n\nЗапуск игры ещё не подключён в этой сборке приложения.")!
+                .SetNeutralButton(_favorites.Contains(uri.AbsoluteUri) ? "Убрать из избранного" : "В избранное", (_, _) => ToggleFavorite(uri.AbsoluteUri))!
+                .SetPositiveButton("Закрыть", (_, _) => { })!.Show();
+        }
+        catch (OperationCanceledException) { if (!cancel.IsCancellationRequested) _status.Text = "Сервер не ответил вовремя."; }
+        catch (Exception e) when (e is FormatException or HttpRequestException or System.Text.Json.JsonException or InvalidDataException)
+        { _status.Text = e.Message; }
+    }
+
+    protected override void OnSaveInstanceState(Bundle outState)
+    { outState.PutString("address", _address.Text); base.OnSaveInstanceState(outState); }
+
+    protected override void OnDestroy()
+    { _lifetime.Cancel(); _http.Dispose(); base.OnDestroy(); }
+}

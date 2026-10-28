@@ -1,0 +1,9 @@
+[submodule "vendor/NetSerializer"]
+	path = vendor/NetSerializer
+	url = https://github.com/space-wizards/netserializer.git
+[submodule "engine/RobustToolbox"]
+	path = engine/RobustToolbox
+	url = https://github.com/space-wizards/RobustToolbox.git
+[submodule "upstream/SS14.Launcher"]
+	path = upstream/SS14.Launcher
+	url = https://github.com/space-wizards/SS14.Launcher.git

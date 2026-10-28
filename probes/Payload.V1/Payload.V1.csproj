@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ExternalPayload</AssemblyName>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../PayloadEntry.cs" Link="Entry.cs" />
+    <ProjectReference Include="../../vendor/NetSerializer/NetSerializer/NetSerializer.csproj" />
+  </ItemGroup>
+</Project>

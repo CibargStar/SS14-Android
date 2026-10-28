@@ -1,0 +1,49 @@
+name: Build runtime probes
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runtime: [mono, coreclr]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android workload
+        run: dotnet workload install android --skip-manifest-update
+      - name: Check fixture behavior on Linux
+        run: bash scripts/run-probe.sh > artifacts-desktop.log
+      - name: Build Android probe
+        env:
+          MONO_RUNTIME: ${{ matrix.runtime == 'mono' && 'true' || 'false' }}
+        run: >-
+          dotnet build src/RuntimeProbe.Android -c Debug -t:SignAndroidPackage
+          -p:UseMonoRuntime="$MONO_RUNTIME"
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+          -p:JavaSdkDirectory="$JAVA_HOME"
+      - name: Collect device test files
+        run: |
+          mkdir -p artifacts/device-test
+          cp src/RuntimeProbe.Android/bin/Debug/net10.0-android/android-arm64/*-Signed.apk artifacts/device-test/
+          cp -R artifacts/fixtures artifacts/device-test/
+          cp artifacts-desktop.log artifacts/device-test/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-probe-${{ matrix.runtime }}
+          path: artifacts/device-test

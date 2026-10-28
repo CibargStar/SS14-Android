@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+artifacts/
+.vs/
+*.user
+*.log
+__pycache__/
+.keys/
+# Local upstream content integration worktree (not an embedded game bundle).
+content/space-station-14/
+engine/versions/

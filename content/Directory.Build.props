@@ -1,0 +1,3 @@
+<Project>
+  <!-- Do not inject host-project implicit usings or warning policy into upstream content. -->
+</Project>

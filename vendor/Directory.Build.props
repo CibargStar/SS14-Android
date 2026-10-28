@@ -1,0 +1,3 @@
+<Project>
+  <!-- Preserve upstream build settings instead of inheriting app-specific rules. -->
+</Project>

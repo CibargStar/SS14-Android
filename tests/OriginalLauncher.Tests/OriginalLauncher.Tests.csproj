@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Skia" Version="11.3.22" />
+    <PackageReference Include="libsodium" Version="1.0.20.1" />
+    <ProjectReference Include="../../upstream/SS14.Launcher/SS14.Launcher/SS14.Launcher.csproj" AdditionalProperties="AndroidLauncher=true" />
+    <ProjectReference Include="../../upstream/SS14.Launcher/SS14.Loader/SS14.Loader.csproj" AdditionalProperties="AndroidLauncher=true" />
+  </ItemGroup>
+</Project>

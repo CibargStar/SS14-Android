@@ -1,0 +1,53 @@
+name: Build Android client components
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: dotnet workload install android --skip-manifest-update
+      - name: Prepare original launcher port
+        run: bash scripts/prepare-original-launcher.sh
+      - name: Test original launcher, dialogs and persistence
+        run: dotnet run --project tests/OriginalLauncher.Tests -p:AndroidLauncher=true -c Debug
+      - name: Build platform-patched engine
+        run: bash scripts/build-engine.sh
+      - name: Package engine with an ephemeral development signature
+        run: |
+          mkdir -m 700 .keys
+          openssl genpkey -algorithm ED25519 -out .keys/ci-engine.pem
+          python3 scripts/package-android-engine.py --key .keys/ci-engine.pem --version 294.0.1
+      - name: Build Android SDL
+        run: |
+          export ANDROID_NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -n 1)"
+          bash scripts/build-native-sdl.sh
+          bash scripts/build-native-libraries.sh
+          bash scripts/build-native-sodium.sh
+      - name: Build launcher APK
+        run: >-
+          bash scripts/build-original-launcher.sh
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+          -p:JavaSdkDirectory="$JAVA_HOME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ss14-android-development-components
+          path: |
+            src/SS14.Android/bin/Debug/net10.0-android/android-arm64/*-Signed.apk
+            artifacts/native/arm64-v8a/

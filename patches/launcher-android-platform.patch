@@ -1,0 +1,1193 @@
+diff --git a/Directory.Packages.props b/Directory.Packages.props
+index a788ade..c469bef 100644
+--- a/Directory.Packages.props
++++ b/Directory.Packages.props
+@@ -6,7 +6,7 @@
+     <!-- Launcher-loader shared stuff -->
+     <PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="7.0.4" />
+     <PackageVersion Include="Splat" Version="15.3.1" />
+-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.4" Condition="'$(UseSystemSqlite)' != 'True'" />
++    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" Condition="'$(UseSystemSqlite)' != 'True'" />
+     <PackageVersion Include="SQLitePCLRaw.provider.sqlite3" Version="2.1.4" Condition="'$(UseSystemSqlite)' == 'True'" />
+     <PackageVersion Include="NSec.Cryptography" Version="25.4.0"/>
+     <PackageVersion Include="SharpZstd.Interop" Version="1.5.2-beta2"/>
+@@ -16,10 +16,10 @@
+     <!-- Loader -->
+     <PackageVersion Include="Robust.Natives" Version="0.2.5"/>
+     <!-- Launcher -->
+-    <PackageVersion Include="Avalonia" Version="11.2.4"/>
+-    <PackageVersion Include="Avalonia.Desktop" Version="11.2.4"/>
+-    <PackageVersion Include="Avalonia.Diagnostics" Version="11.2.4"/>
+-    <PackageVersion Include="Avalonia.Themes.Simple" Version="11.2.4"/>
++    <PackageVersion Include="Avalonia" Version="11.3.22"/>
++    <PackageVersion Include="Avalonia.Desktop" Version="11.3.22"/>
++    <PackageVersion Include="Avalonia.Diagnostics" Version="11.3.22"/>
++    <PackageVersion Include="Avalonia.Themes.Simple" Version="11.3.22"/>
+     <PackageVersion Include="CodeHollow.FeedReader" Version="1.2.6"/>
+     <PackageVersion Include="Dapper" Version="2.0.123"/>
+     <PackageVersion Include="DynamicData" Version="8.4.1"/>
+diff --git a/SS14.Launcher/App.xaml.cs b/SS14.Launcher/App.xaml.cs
+index 214def3..8b19362 100644
+--- a/SS14.Launcher/App.xaml.cs
++++ b/SS14.Launcher/App.xaml.cs
+@@ -61,6 +61,8 @@ public class App : Application
+         {
+             using var dataStream = AssetLoader.Open(new Uri($"avares://SS14.Launcher/Assets/{path}"));
+ 
++            if (LauncherMobile.DataRoot != null && type == AssetType.WindowIcon)
++                continue; // Android launcher icon is supplied by the host APK.
+             var asset = LoadAsset(type, dataStream);
+ 
+             _baseAssets.Add(name, asset);
+@@ -78,6 +80,8 @@ public class App : Application
+                 continue;
+             }
+ 
++            if (LauncherMobile.DataRoot != null && def.Type == AssetType.WindowIcon)
++                continue;
+             var ms = new MemoryStream(data, writable: false);
+             var asset = LoadAsset(def.Type, ms);
+ 
+@@ -118,6 +122,11 @@ public class App : Application
+             desktop.Startup += OnStartup;
+             desktop.Exit += OnExit;
+         }
++        else if (ApplicationLifetime is ISingleViewApplicationLifetime)
++        {
++            OnStartup(null, null!);
++        }
++        base.OnFrameworkInitializationCompleted();
+     }
+ 
+     private void OnStartup(object? s, ControlledApplicationLifetimeStartupEventArgs e)
+@@ -151,7 +160,8 @@ public class App : Application
+         var lc = new LauncherCommands(viewModel);
+         lc.RunCommandTask();
+         Locator.CurrentMutable.RegisterConstant(lc);
+-        msgr.StartServerTask(lc);
++        if (LauncherMobile.DataRoot == null)
++            msgr.StartServerTask(lc);
+ 
+         if (ConfigConstants.IsAuthOverride)
+         {
+@@ -160,7 +170,22 @@ public class App : Application
+             viewModel.StartAuthOverrideCountdown();
+         }
+ 
+-        window.Show();
++        if (LauncherMobile.DataRoot != null)
++        {
++            window.MinWidth = 0;
++            window.MinHeight = 0;
++            window.Width = double.NaN;
++            window.Height = double.NaN;
++            var root = new Grid();
++            LauncherMobile.Root = root;
++            root.Children.Add(window);
++            if (ApplicationLifetime is ISingleViewApplicationLifetime single)
++                single.MainView = root;
++        }
++        else
++        {
++            window.Show();
++        }
+     }
+ 
+     private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+diff --git a/SS14.Launcher/Helpers.cs b/SS14.Launcher/Helpers.cs
+index c1293e1..2e324c7 100644
+--- a/SS14.Launcher/Helpers.cs
++++ b/SS14.Launcher/Helpers.cs
+@@ -7,7 +7,9 @@ using System.Net.Http;
+ using System.Text.Json;
+ using System.Threading;
+ using System.Threading.Tasks;
++#if !ANDROID_LAUNCHER
+ using Mono.Unix;
++#endif
+ using Serilog;
+ using TerraFX.Interop.Windows;
+ using Win = TerraFX.Interop.Windows.Windows;
+@@ -118,6 +120,11 @@ public static class Helpers
+ 
+     public static void OpenUri(string uri)
+     {
++        if (LauncherMobile.OpenUri is { } mobileOpen)
++        {
++            mobileOpen(uri);
++            return;
++        }
+         Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
+     }
+ 
+@@ -189,10 +196,15 @@ public static class Helpers
+ 
+     public static void ChmodPlusX(string path)
+     {
++#if ANDROID_LAUNCHER
++        File.SetUnixFileMode(path, File.GetUnixFileMode(path) |
++            UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
++#else
+         var f = new UnixFileInfo(path);
+         f.FileAccessPermissions |=
+             FileAccessPermissions.UserExecute | FileAccessPermissions.GroupExecute |
+             FileAccessPermissions.OtherExecute;
++#endif
+     }
+     public static unsafe int MessageBoxHelper(string text, string caption, uint type)
+     {
+diff --git a/SS14.Launcher/LauncherMobile.cs b/SS14.Launcher/LauncherMobile.cs
+new file mode 100644
+index 0000000..5b0a621
+--- /dev/null
++++ b/SS14.Launcher/LauncherMobile.cs
+@@ -0,0 +1,33 @@
++using System;
++using System.Collections.Generic;
++using Avalonia.Controls;
++using System.Threading.Tasks;
++using SS14.Launcher.Models;
++using System.IO;
++using System.Threading;
++
++namespace SS14.Launcher;
++
++// Android supplies OS integration; application logic remains in the upstream services/views.
++public static class LauncherMobile
++{
++    public static string? DataRoot { get; set; }
++    public static Action<string>? OpenUri { get; set; }
++    public static Action? Exit { get; set; }
++    public static Action? OpenLogs { get; set; }
++    public static Func<MobileGameLaunch, Task<IClientProcess>>? StartGame { get; set; }
++    public static Func<CancellationToken, Task<Stream>>? OpenEngineManifest { get; set; }
++    public static Func<string, CancellationToken, Task<Stream>>? OpenEnginePayload { get; set; }
++    public static string? EnginePublicKeyPath { get; set; }
++    public static Func<Task<bool>>? CheckLauncherUpdate { get; set; }
++    public static Func<Task>? InstallLauncherUpdate { get; set; }
++    public static Grid? Root { get; set; }
++    internal static readonly Stack<Action> DialogClosers = new();
++
++    public static bool CloseTopDialog()
++    {
++        if (!DialogClosers.TryPeek(out var close)) return false;
++        close();
++        return true;
++    }
++}
+diff --git a/SS14.Launcher/LauncherPaths.cs b/SS14.Launcher/LauncherPaths.cs
+index 025ea50..951c6e3 100644
+--- a/SS14.Launcher/LauncherPaths.cs
++++ b/SS14.Launcher/LauncherPaths.cs
+@@ -31,7 +31,7 @@ public static class LauncherPaths
+     public static readonly string PathClientMacLog = Path.Combine(DirLogs, ClientMacLogName);
+     public static readonly string PathClientStdoutLog = Path.Combine(DirLogs, ClientStdoutLogName);
+     public static readonly string PathClientStderrLog = Path.Combine(DirLogs, ClientStderrLogName);
+-    public static readonly string PathPublicKey = Path.Combine(DirLauncherInstall, "signing_key");
++    public static readonly string PathPublicKey = LauncherMobile.EnginePublicKeyPath ?? Path.Combine(DirLauncherInstall, "signing_key");
+     public static readonly string PathContentDb = Path.Combine(DirLocalData, "content.db");
+     public static readonly string PathOverrideAssetsDb = Path.Combine(DirLocalData, "override_assets.db");
+ 
+@@ -47,11 +47,15 @@ public static class LauncherPaths
+ 
+     private static string GetInstallDir()
+     {
++        if (LauncherMobile.DataRoot is { } root)
++            return Path.Combine(root, "install");
+         return Path.GetDirectoryName(typeof(LauncherPaths).Assembly.Location)!;
+     }
+ 
+     private static string GetUserDataDir()
+     {
++        if (LauncherMobile.DataRoot is { } root)
++            return Path.Combine(root, "launcher");
+         string appDataDir;
+ 
+         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+diff --git a/SS14.Launcher/Models/Connector.cs b/SS14.Launcher/Models/Connector.cs
+index 94960ca..960a01f 100644
+--- a/SS14.Launcher/Models/Connector.cs
++++ b/SS14.Launcher/Models/Connector.cs
+@@ -306,7 +306,7 @@ public partial class Connector : ObservableObject
+         Status = ConnectionStatus.ClientExited;
+     }
+ 
+-    private async Task<Process?> ConnectLaunchClient(ContentLaunchInfo launchInfo,
++    private async Task<IClientProcess?> ConnectLaunchClient(ContentLaunchInfo launchInfo,
+         ServerInfo? info,
+         ServerBuildInformation? serverBuildInformation,
+         Uri? connectAddress,
+@@ -496,7 +496,7 @@ public partial class Connector : ObservableObject
+             .MaxBy(m => m.Version)?.m;
+     }
+ 
+-    private async Task<Process?> LaunchClient(
++    private async Task<IClientProcess?> LaunchClient(
+         ContentLaunchInfo launchInfo,
+         IEnumerable<string> extraArgs,
+         List<(string, string)> env)
+@@ -506,7 +506,7 @@ public partial class Connector : ObservableObject
+         var binPath = _engineManager.GetEnginePath(engineVersion);
+         var sig = _engineManager.GetEngineSignature(engineVersion);
+ 
+-        var startInfo = await GetLoaderStartInfo();
++        var startInfo = LauncherMobile.StartGame == null ? await GetLoaderStartInfo() : new ProcessStartInfo();
+ 
+         startInfo.ArgumentList.Add(binPath);
+         startInfo.ArgumentList.Add(sig);
+@@ -586,6 +586,16 @@ public partial class Connector : ObservableObject
+ 
+         Log.Debug("Launch command: {LaunchCommand}", commandBuilder.ToString());
+ 
++        if (LauncherMobile.StartGame is { } mobileStart)
++        {
++            var environment = startInfo.Environment
++                .Where(pair => pair.Key.StartsWith("ROBUST_", StringComparison.Ordinal) ||
++                               pair.Key.StartsWith("SS14_", StringComparison.Ordinal) ||
++                               pair.Key.StartsWith("DOTNET_", StringComparison.Ordinal))
++                .ToDictionary(pair => pair.Key, pair => pair.Value);
++            return await mobileStart(new MobileGameLaunch(startInfo.ArgumentList.ToArray(), environment));
++        }
++
+         var process = Process.Start(startInfo);
+ 
+         if (process != null)
+@@ -611,7 +621,7 @@ public partial class Connector : ObservableObject
+             PipeOutput(process, fileStdout, fileStderr);
+         }
+ 
+-        return process;
++        return process == null ? null : new DesktopClientProcess(process);
+ 
+         void EnvVar(string envVar, string? value)
+         {
+diff --git a/SS14.Launcher/Models/Data/DataManager.cs b/SS14.Launcher/Models/Data/DataManager.cs
+index 7f5f26e..669f884 100644
+--- a/SS14.Launcher/Models/Data/DataManager.cs
++++ b/SS14.Launcher/Models/Data/DataManager.cs
+@@ -376,12 +376,16 @@ public sealed class DataManager : ObservableObject
+         _dbCommandQueue.Clear();
+         Log.Debug("Committing config to disk, running {DbCommandCount} commands", commands.Length);
+ 
++        // Reserve the write before scheduling work. Otherwise Close() can acquire
++        // the semaphore before the worker starts, losing queued settings at exit.
++        var writing = _dbWritingSemaphore.WaitAsync();
++
+         await Task.Run(async () =>
+         {
+             // SQLite is thread safe and won't have any problems with having multiple writers
+             // (but they'll be synchronous).
+             // That said, we need something to wait on when we shut down to make sure everything is written, so.
+-            await _dbWritingSemaphore.WaitAsync();
++            await writing.ConfigureAwait(false);
+             try
+             {
+                 using var connection = new SqliteConnection(GetCfgDbConnectionString());
+diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
+index 7b217fd..0d4748e 100644
+--- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
++++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.Diagnostics;
+ using System.Net.Http.Json;
+@@ -69,9 +69,18 @@ public sealed partial class EngineManagerDynamic
+         // TODO: If-Modified-Since and If-None-Match request conditions.
+ 
+         Log.Debug("Loading manifest from {manifestUrl}...", ConfigConstants.RobustBuildsManifest);
+-        _cachedRobustVersionInfo =
+-            await ConfigConstants.RobustBuildsManifest.GetFromJsonAsync<Dictionary<string, VersionInfo>>(
+-                _http, cancel);
++        if (LauncherMobile.OpenEngineManifest is { } openManifest)
++        {
++            await using var stream = await openManifest(cancel);
++            _cachedRobustVersionInfo = await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<string, VersionInfo>>(
++                stream, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web), cancel)
++                ?? throw new System.IO.InvalidDataException("Empty Android engine manifest.");
++        }
++        else
++        {
++            _cachedRobustVersionInfo =
++                await ConfigConstants.RobustBuildsManifest.GetFromJsonAsync<Dictionary<string, VersionInfo>>(_http, cancel);
++        }
+ 
+         _robustCacheValidUntil = _manifestStopwatch.Elapsed + ConfigConstants.RobustManifestCacheTime;
+     }
+@@ -85,8 +94,11 @@ public sealed partial class EngineManagerDynamic
+ 
+         if (followRedirects)
+         {
++            var seen = new HashSet<string> { version };
+             while (versionInfo.RedirectVersion != null)
+             {
++                if (!seen.Add(versionInfo.RedirectVersion))
++                    throw new System.IO.InvalidDataException("Engine manifest redirect loop.");
+                 version = versionInfo.RedirectVersion;
+                 versionInfo = _cachedRobustVersionInfo[versionInfo.RedirectVersion];
+             }
+diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
+index c1e6c78..98f0a75 100644
+--- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
++++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
+@@ -5,6 +5,7 @@ using System.IO.MemoryMappedFiles;
+ using System.Linq;
+ using System.Net.Http;
+ using System.Net.Http.Json;
++using System.Security.Cryptography;
+ using System.Text.RegularExpressions;
+ using System.Threading;
+ using System.Threading.Tasks;
+@@ -120,20 +121,37 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+         Helpers.EnsureDirectoryExists(LauncherPaths.DirEngineInstallations);
+ 
+         var downloadTarget = Path.Combine(LauncherPaths.DirEngineInstallations, $"{foundVersion.Version}.zip");
+-        await using var file = File.Create(downloadTarget, 4096, FileOptions.Asynchronous);
+-
++        var temporary = downloadTarget + "." + Guid.NewGuid().ToString("N") + ".tmp";
+         try
+         {
+-            await _http.DownloadToStream(buildInfo.Url, file, progress, cancel: cancel);
+-        }
+-        catch (OperationCanceledException)
+-        {
+-            // Don't leave behind garbage.
+-            await file.DisposeAsync();
+-            File.Delete(downloadTarget);
+-
+-            throw;
++            await using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite,
++                FileShare.None, 4096, FileOptions.Asynchronous))
++            {
++                if (LauncherMobile.OpenEnginePayload is { } openPayload)
++                {
++                    await using var source = await openPayload(buildInfo.Url, cancel);
++                    await source.CopyToAsync(file, cancel);
++                    progress?.Invoke(file.Length, file.Length);
++                }
++                else await _http.DownloadToStream(buildInfo.Url, file, progress, cancel: cancel);
++                await file.FlushAsync(cancel);
++                file.Position = 0;
++                var hash = await SHA256.HashDataAsync(file, cancel);
++                if (!CryptographicOperations.FixedTimeEquals(hash, Convert.FromHexString(buildInfo.Sha256)))
++                    throw new CryptographicException("Engine package hash mismatch.");
++                file.Position = 0;
++                using var bytes = new MemoryStream();
++                await file.CopyToAsync(bytes, cancel);
++                var key = PublicKey.Import(SignatureAlgorithm.Ed25519,
++                    await File.ReadAllBytesAsync(LauncherPaths.PathPublicKey, cancel), KeyBlobFormat.PkixPublicKeyText);
++                if (!SignatureAlgorithm.Ed25519.Verify(key, bytes.GetBuffer().AsSpan(0, checked((int)bytes.Length)),
++                    Convert.FromHexString(buildInfo.Signature)))
++                    throw new CryptographicException("Engine package signature mismatch.");
++            }
++            cancel.ThrowIfCancellationRequested();
++            File.Move(temporary, downloadTarget, overwrite: true);
+         }
++        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+ 
+         _cfg.AddEngineInstallation(new InstalledEngineVersion(foundVersion.Version, buildInfo.Signature));
+         _cfg.CommitConfig();
+diff --git a/SS14.Launcher/Models/IClientProcess.cs b/SS14.Launcher/Models/IClientProcess.cs
+new file mode 100644
+index 0000000..a006d50
+--- /dev/null
++++ b/SS14.Launcher/Models/IClientProcess.cs
+@@ -0,0 +1,25 @@
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace SS14.Launcher.Models;
++
++// The launcher keeps its existing connect/update lifecycle while Android supplies
++// an Activity-backed process instead of invoking a desktop executable.
++public interface IClientProcess
++{
++    bool HasExited { get; }
++    int ExitCode { get; }
++    Task WaitForExitAsync(CancellationToken cancel);
++}
++
++internal sealed class DesktopClientProcess(Process process) : IClientProcess
++{
++    public bool HasExited => process.HasExited;
++    public int ExitCode => process.ExitCode;
++    public Task WaitForExitAsync(CancellationToken cancel) => process.WaitForExitAsync(cancel);
++}
++
++public sealed record MobileGameLaunch(string[] Arguments, Dictionary<string, string?> Environment);
+diff --git a/SS14.Launcher/PlatformWindow.cs b/SS14.Launcher/PlatformWindow.cs
+new file mode 100644
+index 0000000..c450cf2
+--- /dev/null
++++ b/SS14.Launcher/PlatformWindow.cs
+@@ -0,0 +1,89 @@
++using System;
++using System.Threading.Tasks;
++using Avalonia;
++using Avalonia.Controls;
++using Avalonia.Layout;
++using Avalonia.Media;
++using Avalonia.Platform;
++
++namespace SS14.Launcher;
++
++#if ANDROID_LAUNCHER
++// Android has a single Avalonia TopLevel. Preserve upstream dialog classes and XAML
++// by presenting their existing content modally inside that TopLevel.
++public class PlatformWindow : ContentControl
++{
++    public static readonly StyledProperty<string?> TitleProperty =
++        AvaloniaProperty.Register<PlatformWindow, string?>(nameof(Title));
++    public static readonly StyledProperty<WindowIcon?> IconProperty =
++        AvaloniaProperty.Register<PlatformWindow, WindowIcon?>(nameof(Icon));
++    private Action<object?>? _close;
++    public string? Title { get => GetValue(TitleProperty); set => SetValue(TitleProperty, value); }
++    public WindowIcon? Icon { get => GetValue(IconProperty); set => SetValue(IconProperty, value); }
++    public WindowStartupLocation WindowStartupLocation { get; set; }
++    public IPlatformHandle? TryGetPlatformHandle() => null;
++    public void Activate() => Focus();
++    public void Show() { }
++    protected virtual void OnOpened(EventArgs e) { }
++    public void Close() => Close(null);
++    public void Close(object? result)
++    {
++        if (_close is { } close) close(result);
++        else LauncherMobile.Exit?.Invoke();
++    }
++
++    public Task ShowDialog(PlatformWindow owner) => ShowDialog<object?>(owner);
++
++    public Task<T> ShowDialog<T>(PlatformWindow owner)
++    {
++        var root = LauncherMobile.Root ?? throw new InvalidOperationException("Android root is not initialized.");
++        if (_close != null) throw new InvalidOperationException("Dialog is already open.");
++        var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
++        var previousFocus = TopLevel.GetTopLevel(owner)?.FocusManager?.GetFocusedElement();
++        MinWidth = 0;
++        MaxWidth = Math.Max(1, root.Bounds.Width - 24);
++        MaxHeight = Math.Max(1, root.Bounds.Height - 24);
++        Height = double.NaN;
++        var closeButton = new Button { Content = "×", HorizontalAlignment = HorizontalAlignment.Right };
++        var title = new TextBlock { Text = Title, VerticalAlignment = VerticalAlignment.Center };
++        var header = new DockPanel { LastChildFill = true };
++        DockPanel.SetDock(closeButton, Dock.Right);
++        header.Children.Add(closeButton);
++        header.Children.Add(title);
++        var panel = new DockPanel();
++        DockPanel.SetDock(header, Dock.Top);
++        panel.Children.Add(header);
++        panel.Children.Add(this);
++        var frame = new Border
++        {
++            Background = new SolidColorBrush(Color.Parse("#212126")), Padding = new Thickness(8),
++            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
++            Child = panel
++        };
++        var overlay = new Grid { Background = new SolidColorBrush(Color.Parse("#AA000000")) };
++        overlay.Children.Add(frame);
++        Action closeAction = () => Close();
++        var wasEnabled = owner.IsEnabled;
++        owner.IsEnabled = false;
++        LauncherMobile.DialogClosers.Push(closeAction);
++        _close = value =>
++        {
++            if (LauncherMobile.DialogClosers.Peek() != closeAction)
++                throw new InvalidOperationException("Dialogs must close in presentation order.");
++            LauncherMobile.DialogClosers.Pop();
++            root.Children.Remove(overlay);
++            panel.Children.Remove(this);
++            owner.IsEnabled = wasEnabled;
++            _close = null;
++            previousFocus?.Focus();
++            completion.TrySetResult(value is null ? default! : (T)value);
++        };
++        closeButton.Click += (_, _) => Close();
++        root.Children.Add(overlay);
++        OnOpened(EventArgs.Empty);
++        return completion.Task;
++    }
++}
++#else
++public class PlatformWindow : Window { }
++#endif
+diff --git a/SS14.Launcher/Program.cs b/SS14.Launcher/Program.cs
+index 4bbaed7..985aa42 100644
+--- a/SS14.Launcher/Program.cs
++++ b/SS14.Launcher/Program.cs
+@@ -4,6 +4,7 @@ using System.Diagnostics;
+ using System.IO;
+ using System.Linq;
+ using System.Net.Http.Headers;
++using System.Net.Http;
+ using System.Runtime.InteropServices;
+ using System.Text;
+ using Avalonia;
+@@ -28,7 +29,7 @@ using LogEventLevel = Serilog.Events.LogEventLevel;
+ 
+ namespace SS14.Launcher;
+ 
+-internal static class Program
++public static class Program
+ {
+     // Initialization code. Don't use any Avalonia, third-party APIs or any
+     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
+@@ -211,12 +212,26 @@ internal static class Program
+         }
+     }
+ 
++    public static AppBuilder BuildForAndroid(HttpClient? httpOverride = null)
++    {
++        SQLitePCL.Batteries_V2.Init();
++        Locator.CurrentMutable.RegisterConstant(new LauncherMessaging());
++        LauncherPaths.CreateDirs();
++        var cfg = new DataManager();
++        cfg.Load();
++        Locator.CurrentMutable.RegisterConstant(cfg);
++        Log.Logger = new LoggerConfiguration().MinimumLevel.Debug()
++            .WriteTo.File(LauncherPaths.PathLauncherLog, rollingInterval: RollingInterval.Day,
++                retainedFileCountLimit: 7).CreateLogger();
++        return BuildAvaloniaApp(cfg, httpOverride);
++    }
++
+     // Avalonia configuration, don't remove; also used by visual designer.
+-    private static AppBuilder BuildAvaloniaApp(DataManager cfg)
++    private static AppBuilder BuildAvaloniaApp(DataManager cfg, HttpClient? httpOverride = null)
+     {
+         var locator = Locator.CurrentMutable;
+ 
+-        var http = HappyEyeballsHttp.CreateHttpClient();
++        var http = httpOverride ?? HappyEyeballsHttp.CreateHttpClient();
+         http.DefaultRequestHeaders.UserAgent.Add(
+             new ProductInfoHeaderValue(LauncherVersion.Name, LauncherVersion.Version?.ToString()));
+         http.DefaultRequestHeaders.Add("SS14-Launcher-Fingerprint", cfg.Fingerprint.ToString());
+@@ -243,8 +258,11 @@ internal static class Program
+ 
+         CheckLauncherArchitecture(cfg, engineManager);
+ 
+-        return AppBuilder.Configure(() => new App(overrideAssets))
+-            .UsePlatformDetect()
++        var builder = AppBuilder.Configure(() => new App(overrideAssets));
++#if !ANDROID_LAUNCHER
++        builder = builder.UsePlatformDetect();
++#endif
++        return builder
+             .With(new FontManagerOptions
+             {
+                 // Necessary workaround for #84 on Linux
+diff --git a/SS14.Launcher/SS14.Launcher.csproj b/SS14.Launcher/SS14.Launcher.csproj
+index 36df92c..999612a 100644
+--- a/SS14.Launcher/SS14.Launcher.csproj
++++ b/SS14.Launcher/SS14.Launcher.csproj
+@@ -1,4 +1,4 @@
+-﻿<Project Sdk="Microsoft.NET.Sdk">
++<Project Sdk="Microsoft.NET.Sdk">
+   <Import Project="../Launcher.props" />
+   <PropertyGroup>
+     <OutputType>Exe</OutputType>
+@@ -19,19 +19,24 @@
+     <DefineConstants>$(DefineConstants);USE_SYSTEM_SQLITE</DefineConstants>
+   </PropertyGroup>
+ 
++  <PropertyGroup Condition="'$(AndroidLauncher)' == 'true'">
++    <OutputType>Library</OutputType>
++    <DefineConstants>$(DefineConstants);ANDROID_LAUNCHER</DefineConstants>
++    <OutputPath>bin/$(Configuration)/android-shared/</OutputPath>
++  </PropertyGroup>
+   <ItemGroup>
+     <Compile Update="**\*.xaml.cs">
+       <DependentUpon>%(Filename)</DependentUpon>
+     </Compile>
+-    <AvaloniaResource Include="**\*.xaml">
++    <AvaloniaXaml Include="**\*.xaml">
+       <SubType>Designer</SubType>
+-    </AvaloniaResource>
++    </AvaloniaXaml>
+     <AvaloniaResource Include="Assets\**" />
+     <AvaloniaResource Update="Views\MainWindowLogin.xaml">
+       <SubType>Designer</SubType>
+     </AvaloniaResource>
+ 
+-    <AdditionalFiles Include="**\*.xaml" SourceItemGroup="AvaloniaXaml" />
++
+ 
+     <Compile Update="Views\MainWindowTabs\ServerFilterView.xaml.cs">
+       <DependentUpon>ServerFilterView.xaml</DependentUpon>
+@@ -39,7 +44,7 @@
+   </ItemGroup>
+   <ItemGroup>
+     <PackageReference Include="Avalonia" />
+-    <PackageReference Include="Avalonia.Desktop" />
++    <PackageReference Include="Avalonia.Desktop" Condition="'$(AndroidLauncher)' != 'true'" />
+     <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" />
+     <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="HotAvalonia" PrivateAssets="All" />
+     <PackageReference Include="Avalonia.Themes.Simple" />
+@@ -58,12 +63,14 @@
+     <PackageReference Include="YamlDotNet" />
+     <PackageReference Include="TerraFX.Interop.Windows" />
+     <PackageReference Include="NSec.Cryptography" />
+-    <PackageReference Include="Mono.Posix.NETStandard" />
++    <PackageReference Include="Mono.Posix.NETStandard" Condition="'$(AndroidLauncher)' != 'true'" />
+     <PackageReference Include="SharpZstd.Interop" ExcludeAssets="native" />
+-    <PackageReference Include="Robust.Natives.Zstd" />
++    <PackageReference Include="Robust.Natives.Zstd" ExcludeAssets="native" Condition="'$(AndroidLauncher)' == 'true'" />
++    <PackageReference Include="Robust.Natives.Zstd" Condition="'$(AndroidLauncher)' != 'true'" />
+     <PackageReference Include="SpaceWizards.Sodium" />
+     <!-- Add libsodium to control version, SpaceWizards.Sodium's dependency is behind -->
+-    <PackageReference Include="libsodium" />
++    <PackageReference Include="libsodium" ExcludeAssets="native" Condition="'$(AndroidLauncher)' == 'true'" />
++    <PackageReference Include="libsodium" Condition="'$(AndroidLauncher)' != 'true'" />
+     <PackageReference Include="JetBrains.Annotations" />
+     <PackageReference Include="Microsoft.NET.ILLink.Tasks" />
+     <PackageReference Include="System.Net.Http.WinHttpHandler" />
+diff --git a/SS14.Launcher/Theme/Theme.xaml b/SS14.Launcher/Theme/Theme.xaml
+index 485a865..d6840dd 100644
+--- a/SS14.Launcher/Theme/Theme.xaml
++++ b/SS14.Launcher/Theme/Theme.xaml
+@@ -1,4 +1,4 @@
+-<Styles xmlns="https://github.com/avaloniaui"
++<Styles xmlns:p="clr-namespace:SS14.Launcher" xmlns="https://github.com/avaloniaui"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:sys="clr-namespace:System;assembly=mscorlib">
+ 
+@@ -24,7 +24,9 @@
+     <Setter Property="Foreground" Value="{DynamicResource ThemeSubTextBrush}" />
+   </Style>
+ 
+-  <Style Selector="Window">
++  <Style Selector=":is(p|PlatformWindow)">
++    <Setter Property="Background" Value="{DynamicResource ThemeBackgroundBrush}" />
++    <Setter Property="Foreground" Value="{DynamicResource ThemeForegroundBrush}" />
+     <Setter Property="FontFamily" Value="/Assets/Fonts/noto_sans/*.ttf#Noto Sans" />
+   </Style>
+ 
+diff --git a/SS14.Launcher/Theme/ThemeWindow.xaml b/SS14.Launcher/Theme/ThemeWindow.xaml
+index 71548b9..e55275e 100644
+--- a/SS14.Launcher/Theme/ThemeWindow.xaml
++++ b/SS14.Launcher/Theme/ThemeWindow.xaml
+@@ -1,6 +1,6 @@
+-<Styles xmlns="https://github.com/avaloniaui"
++<Styles xmlns:p="clr-namespace:SS14.Launcher" xmlns="https://github.com/avaloniaui"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+-  <Style Selector="Window.DoAFlip">
++  <Style Selector=":is(p|PlatformWindow).DoAFlip">
+     <Style.Animations>
+       <Animation Duration="0:0:1">
+         <KeyFrame Cue="0%">
+diff --git a/SS14.Launcher/Utility/RidUtility.cs b/SS14.Launcher/Utility/RidUtility.cs
+index fdac426..a397ca1 100644
+--- a/SS14.Launcher/Utility/RidUtility.cs
++++ b/SS14.Launcher/Utility/RidUtility.cs
+@@ -28,6 +28,7 @@ public static class RidUtility
+             }
+         }
+ 
++        var android = currentRid.StartsWith("android", StringComparison.Ordinal);
+         // Breadth-first search.
+         var q = new Queue<string>();
+         if (!catalog.Runtimes.TryGetValue(currentRid, out var root))
+@@ -46,6 +47,9 @@ public static class RidUtility
+ 
+             foreach (var w in catalog.Runtimes[v].Imports)
+             {
++                // Android uses Bionic, not desktop glibc. Never select a desktop engine/module.
++                if (android && !w.StartsWith("android", StringComparison.Ordinal))
++                    continue;
+                 var r = catalog.Runtimes[w];
+                 if (!r.Discovered)
+                 {
+@@ -60,6 +64,15 @@ public static class RidUtility
+ 
+     private static string GuessRid()
+     {
++        if (OperatingSystem.IsAndroid())
++            return RuntimeInformation.ProcessArchitecture switch
++            {
++                Architecture.Arm64 => "android-arm64",
++                Architecture.Arm => "android-arm",
++                Architecture.X64 => "android-x64",
++                _ => "unknown"
++            };
++
+         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+         {
+             return RuntimeInformation.ProcessArchitecture switch
+diff --git a/SS14.Launcher/Utility/ZStd.cs b/SS14.Launcher/Utility/ZStd.cs
+index e2a84e2..d9b9e5d 100644
+--- a/SS14.Launcher/Utility/ZStd.cs
++++ b/SS14.Launcher/Utility/ZStd.cs
+@@ -1,5 +1,6 @@
+-﻿using System;
++using System;
+ using System.Buffers;
++using System.Collections.Generic;
+ using System.IO;
+ using System.Reflection;
+ using System.Runtime.CompilerServices;
+@@ -22,17 +23,28 @@ public static class ZStd
+     [ModuleInitializer]
+     public static void InitZStd()
+     {
+-        NativeLibrary.SetDllImportResolver(
+-            typeof(Zstd).Assembly,
+-            ResolveZstd
+-            );
++        lock (typeof(AppContext))
++        {
++            const string key = "SS14.ZstdResolverAssemblies";
++            var assemblies = AppContext.GetData(key) as HashSet<Assembly> ?? new HashSet<Assembly>();
++            var assembly = typeof(Zstd).Assembly;
++            if (assemblies.Contains(assembly)) return;
++            NativeLibrary.SetDllImportResolver(assembly, ResolveZstd);
++            assemblies.Add(assembly);
++            AppContext.SetData(key, assemblies);
++        }
+     }
+ 
+     private static IntPtr ResolveZstd(string name, Assembly assembly, DllImportSearchPath? path)
+     {
+          if (name == "zstd")
+         {
+-            if (OperatingSystem.IsLinux())
++            if (OperatingSystem.IsAndroid())
++            {
++                if (NativeLibrary.TryLoad("libzstd.so", assembly, path, out var handle))
++                    return handle;
++            }
++            else if (OperatingSystem.IsLinux())
+             {
+                 // Try zstd.so we ship ourselves.
+                 if (NativeLibrary.TryLoad("zstd.so", assembly, path, out var handle))
+diff --git a/SS14.Launcher/ViewModels/MainWindowLoginViewModel.cs b/SS14.Launcher/ViewModels/MainWindowLoginViewModel.cs
+index c358eb1..1567672 100644
+--- a/SS14.Launcher/ViewModels/MainWindowLoginViewModel.cs
++++ b/SS14.Launcher/ViewModels/MainWindowLoginViewModel.cs
+@@ -60,6 +60,11 @@ public class MainWindowLoginViewModel : ViewModelBase
+ 
+     public void OpenLogDirectory()
+     {
++        if (LauncherMobile.OpenLogs is { } open)
++        {
++            open();
++            return;
++        }
+         Process.Start(new ProcessStartInfo
+         {
+             UseShellExecute = true,
+diff --git a/SS14.Launcher/ViewModels/MainWindowTabs/HomePageViewModel.cs b/SS14.Launcher/ViewModels/MainWindowTabs/HomePageViewModel.cs
+index ca2cbe4..f590547 100644
+--- a/SS14.Launcher/ViewModels/MainWindowTabs/HomePageViewModel.cs
++++ b/SS14.Launcher/ViewModels/MainWindowTabs/HomePageViewModel.cs
+@@ -96,6 +96,7 @@ public partial class HomePageViewModel : MainWindowTabViewModel
+         }
+ 
+         var (name, address) = await new AddFavoriteDialog().ShowDialog<(string name, string address)>(window);
++        if (string.IsNullOrWhiteSpace(address)) return;
+ 
+         try
+         {
+@@ -109,9 +110,9 @@ public partial class HomePageViewModel : MainWindowTabViewModel
+         }
+     }
+ 
+-    private bool TryGetWindow([NotNullWhen(true)] out Window? window)
++    private bool TryGetWindow([NotNullWhen(true)] out MainWindow? window)
+     {
+-        window = Control?.GetVisualRoot() as Window;
++        window = MainWindowViewModel.Control;
+         return window != null;
+     }
+ 
+diff --git a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
+index d61a93a..336a794 100644
+--- a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
++++ b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
+@@ -72,6 +72,11 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+ 
+     public void OpenLogDirectory()
+     {
++        if (LauncherMobile.OpenLogs is { } open)
++        {
++            open();
++            return;
++        }
+         Process.Start(new ProcessStartInfo
+         {
+             UseShellExecute = true,
+diff --git a/SS14.Launcher/ViewModels/MainWindowViewModel.cs b/SS14.Launcher/ViewModels/MainWindowViewModel.cs
+index 5cf49e1..c17d6cd 100644
+--- a/SS14.Launcher/ViewModels/MainWindowViewModel.cs
++++ b/SS14.Launcher/ViewModels/MainWindowViewModel.cs
+@@ -171,6 +171,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+ 
+     private async Task CheckLauncherUpdate()
+     {
++        if (LauncherMobile.CheckLauncherUpdate is { } mobileCheck)
++        {
++            try { OutOfDate = await mobileCheck(); }
++            catch (Exception e) { Log.Warning(e, "Unable to check Android launcher updates."); }
++            return;
++        }
+         // await Task.Delay(1000);
+         if (!ConfigConstants.DoVersionCheck)
+         {
+@@ -203,8 +209,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+         Control?.Close();
+     }
+ 
+-    public void DownloadPressed()
++    public async void DownloadPressed()
+     {
++        if (LauncherMobile.InstallLauncherUpdate is { } mobileInstall)
++        {
++            try { await mobileInstall(); }
++            catch (Exception e)
++            {
++                Log.Error(e, "Unable to install Android launcher update.");
++                OverlayViewModel = new AuthErrorsOverlayViewModel(this, e.Message, new[] { e.ToString() });
++            }
++            return;
++        }
+         Helpers.OpenUri(new Uri(ConfigConstants.DownloadUrl));
+     }
+ 
+diff --git a/SS14.Launcher/Views/AddFavoriteDialog.xaml b/SS14.Launcher/Views/AddFavoriteDialog.xaml
+index a9d812b..1c43a06 100644
+--- a/SS14.Launcher/Views/AddFavoriteDialog.xaml
++++ b/SS14.Launcher/Views/AddFavoriteDialog.xaml
+@@ -1,4 +1,4 @@
+-<Window xmlns="https://github.com/avaloniaui"
++<platform:PlatformWindow xmlns:platform="clr-namespace:SS14.Launcher" xmlns="https://github.com/avaloniaui"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+@@ -26,4 +26,4 @@
+                TextChanged="UpdateSubmitValid" />
+     </Grid>
+   </DockPanel>
+-</Window>
++</platform:PlatformWindow>
+diff --git a/SS14.Launcher/Views/AddFavoriteDialog.xaml.cs b/SS14.Launcher/Views/AddFavoriteDialog.xaml.cs
+index ae7c7dd..9ec3513 100644
+--- a/SS14.Launcher/Views/AddFavoriteDialog.xaml.cs
++++ b/SS14.Launcher/Views/AddFavoriteDialog.xaml.cs
+@@ -4,7 +4,7 @@ using Avalonia.Interactivity;
+ 
+ namespace SS14.Launcher.Views;
+ 
+-public partial class AddFavoriteDialog : Window
++public partial class AddFavoriteDialog : PlatformWindow
+ {
+     public AddFavoriteDialog()
+     {
+diff --git a/SS14.Launcher/Views/DirectConnectDialog.xaml b/SS14.Launcher/Views/DirectConnectDialog.xaml
+index 94f7e87..f51ef6a 100644
+--- a/SS14.Launcher/Views/DirectConnectDialog.xaml
++++ b/SS14.Launcher/Views/DirectConnectDialog.xaml
+@@ -1,4 +1,4 @@
+-<Window xmlns="https://github.com/avaloniaui"
++<platform:PlatformWindow xmlns:platform="clr-namespace:SS14.Launcher" xmlns="https://github.com/avaloniaui"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+@@ -22,4 +22,4 @@
+ 
+     <TextBox Name="AddressBox" Watermark="ss14://example.com:1212" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" />
+   </DockPanel>
+-</Window>
++</platform:PlatformWindow>
+diff --git a/SS14.Launcher/Views/DirectConnectDialog.xaml.cs b/SS14.Launcher/Views/DirectConnectDialog.xaml.cs
+index b72db96..584608d 100644
+--- a/SS14.Launcher/Views/DirectConnectDialog.xaml.cs
++++ b/SS14.Launcher/Views/DirectConnectDialog.xaml.cs
+@@ -6,7 +6,7 @@ using Avalonia.Interactivity;
+ 
+ namespace SS14.Launcher.Views;
+ 
+-public partial class DirectConnectDialog : Window
++public partial class DirectConnectDialog : PlatformWindow
+ {
+     public DirectConnectDialog()
+     {
+diff --git a/SS14.Launcher/Views/HubSettingsDialog.xaml b/SS14.Launcher/Views/HubSettingsDialog.xaml
+index 7df92ad..94d6de0 100644
+--- a/SS14.Launcher/Views/HubSettingsDialog.xaml
++++ b/SS14.Launcher/Views/HubSettingsDialog.xaml
+@@ -1,4 +1,4 @@
+-<Window xmlns="https://github.com/avaloniaui"
++<platform:PlatformWindow xmlns:platform="clr-namespace:SS14.Launcher" xmlns="https://github.com/avaloniaui"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+@@ -15,10 +15,10 @@
+   <Design.DataContext>
+     <vm:HubSettingsViewModel />
+   </Design.DataContext>
+-  <Window.DataContext>
++  <platform:PlatformWindow.DataContext>
+     <vm:HubSettingsViewModel />
+-  </Window.DataContext>
+-  <Window.Styles>
++  </platform:PlatformWindow.DataContext>
++  <platform:PlatformWindow.Styles>
+     <Style Selector="TextBox.Duplicate /template/ Border#border">
+       <Setter Property="BorderBrush" Value="Orange" />
+     </Style>
+@@ -35,7 +35,7 @@
+         </ItemsPanelTemplate>
+       </Setter>
+     </Style>
+-  </Window.Styles>
++  </platform:PlatformWindow.Styles>
+   <DockPanel>
+     <DockPanel Height="30" Margin="0 4 0 0" DockPanel.Dock="Bottom" LastChildFill="False">
+       <Button DockPanel.Dock="Right" Name="DoneButton" Click="Done" Content="{loc:Loc hub-settings-button-done}" Classes="OpenLeft" />
+@@ -132,4 +132,4 @@
+       </StackPanel>
+     </ScrollViewer>
+   </DockPanel>
+-</Window>
++</platform:PlatformWindow>
+diff --git a/SS14.Launcher/Views/HubSettingsDialog.xaml.cs b/SS14.Launcher/Views/HubSettingsDialog.xaml.cs
+index 003c7b7..a7ac3f3 100644
+--- a/SS14.Launcher/Views/HubSettingsDialog.xaml.cs
++++ b/SS14.Launcher/Views/HubSettingsDialog.xaml.cs
+@@ -10,7 +10,7 @@ using static SS14.Launcher.ViewModels.HubSettingsViewModel;
+ 
+ namespace SS14.Launcher.Views;
+ 
+-public partial class HubSettingsDialog : Window
++public partial class HubSettingsDialog : PlatformWindow
+ {
+     private readonly HubSettingsViewModel _viewModel;
+     private readonly LocalizationManager _loc = LocalizationManager.Instance;
+diff --git a/SS14.Launcher/Views/MainWindow.xaml b/SS14.Launcher/Views/MainWindow.xaml
+index da4ebe9..85c6b1e 100644
+--- a/SS14.Launcher/Views/MainWindow.xaml
++++ b/SS14.Launcher/Views/MainWindow.xaml
+@@ -1,4 +1,4 @@
+-<Window xmlns="https://github.com/avaloniaui"
++<platform:PlatformWindow xmlns:platform="clr-namespace:SS14.Launcher" xmlns="https://github.com/avaloniaui"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+@@ -10,4 +10,4 @@
+         Icon="{DynamicResource WindowIcon}"
+         DragDrop.AllowDrop="True">
+   <views:MainWindowContent />
+-</Window>
++</platform:PlatformWindow>
+diff --git a/SS14.Launcher/Views/MainWindow.xaml.cs b/SS14.Launcher/Views/MainWindow.xaml.cs
+index 93a3738..c65b805 100644
+--- a/SS14.Launcher/Views/MainWindow.xaml.cs
++++ b/SS14.Launcher/Views/MainWindow.xaml.cs
+@@ -11,7 +11,7 @@ using IDataObject = Avalonia.Input.IDataObject;
+ 
+ namespace SS14.Launcher.Views;
+ 
+-public partial class MainWindow : Window
++public partial class MainWindow : PlatformWindow
+ {
+     private MainWindowViewModel? _viewModel;
+ 
+diff --git a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
+index c2427a4..e6111d7 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
++++ b/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
+@@ -40,7 +40,7 @@ public partial class HomePageView : UserControl
+         if (_viewModel?.MainWindowViewModel is not { } mainVm)
+             return;
+ 
+-        if (this.GetVisualRoot() is not Window window)
++        if (TopLevel.GetTopLevel(this) is not { } window)
+         {
+             Log.Error("Visual root isn't a window!");
+             return;
+diff --git a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml.cs
+index 6a51143..75d9beb 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml.cs
++++ b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml.cs
+@@ -1,8 +1,10 @@
+ using System;
++using System.Linq;
+ using Avalonia.Controls;
+ using Avalonia.Interactivity;
+ using Avalonia.Threading;
+ using Avalonia.VisualTree;
++using Avalonia.LogicalTree;
+ using Splat;
+ using SS14.Launcher.Localization;
+ using SS14.Launcher.Utility;
+@@ -19,7 +21,7 @@ public partial class OptionsTabView : UserControl
+ 
+     private void Flip(object? o, RoutedEventArgs routedEventArgs)
+     {
+-        var window = (Window?) VisualRoot;
++        var window = this.GetLogicalAncestors().OfType<MainWindow>().FirstOrDefault();
+         if (window == null)
+             return;
+ 
+@@ -45,6 +47,7 @@ public partial class OptionsTabView : UserControl
+ 
+     private async void OpenHubSettings(object? sender, RoutedEventArgs args)
+     {
+-        await new HubSettingsDialog().ShowDialog((Window)this.GetVisualRoot()!);
++        var owner = this.GetLogicalAncestors().OfType<MainWindow>().FirstOrDefault();
++        if (owner != null) await new HubSettingsDialog().ShowDialog(owner);
+     }
+ }
+diff --git a/SS14.Loader/MobileLoader.cs b/SS14.Loader/MobileLoader.cs
+new file mode 100644
+index 0000000..bf7734f
+--- /dev/null
++++ b/SS14.Loader/MobileLoader.cs
+@@ -0,0 +1,59 @@
++using System;
++using System.IO;
++using System.Reflection;
++using System.Runtime.InteropServices;
++using System.Runtime.Loader;
++using Robust.LoaderApi;
++
++namespace SS14.Loader;
++
++// Platform entry into the original signed loader. This does not load Content.Client
++// from the APK; the original ContentDbFileApi supplies the installed server build.
++public static class MobileLoader
++{
++    public static string? NativeDirectory { get; private set; }
++    public static Action<string, string>? Redial { get; private set; }
++
++    public static int Run(string[] arguments, string nativeDirectory, Action<string, string> redial)
++    {
++        NativeDirectory = nativeDirectory;
++        Redial = redial;
++        return Program.Main(arguments);
++    }
++
++    internal sealed class RedialAdapter : IRedialApi
++    {
++        public void Redial(Uri uri, string text = "") =>
++            (MobileLoader.Redial ?? throw new InvalidOperationException("Android redial is unavailable."))(uri.ToString(), text);
++    }
++}
++
++internal sealed class MobileEngineLoadContext(IFileApi files, string nativeDirectory)
++    : AssemblyLoadContext("Robust.Android.Engine", isCollectible: false)
++{
++    protected override Assembly? Load(AssemblyName name)
++    {
++        if (name.Name == typeof(ILoaderEntryPoint).Assembly.GetName().Name)
++            return typeof(ILoaderEntryPoint).Assembly;
++        if (!files.TryOpen(name.Name + ".dll", out var stream)) return null;
++        using (stream) return LoadFromStream(stream);
++    }
++
++    protected override IntPtr LoadUnmanagedDll(string name)
++    {
++        var mapped = name switch
++        {
++            "SDL3" or "SDL3.dll" => "libSDL3.so",
++            "freetype6" or "freetype6.dll" or "libfreetype.so.6" or "libfreetype6.so" => "libfreetype.so",
++            "OpenAL32.dll" or "openal32" or "libopenal.so.1" => "libopenal.so",
++            "libEGL.dll" => "libEGL.so",
++            "libdl.so.2" => "libdl.so",
++            "zstd" or "zstd.so" or "libzstd.so.1" => "libzstd.so",
++            "sodium" or "libsodium" => "libsodium.so",
++            _ => name
++        };
++        if (mapped.Contains('/') || mapped.Contains('\\')) return IntPtr.Zero;
++        return NativeLibrary.TryLoad(Path.Combine(nativeDirectory, mapped), out var result) ||
++               NativeLibrary.TryLoad(mapped, out result) ? result : IntPtr.Zero;
++    }
++}
+diff --git a/SS14.Loader/Program.cs b/SS14.Loader/Program.cs
+index b335fed..7433099 100644
+--- a/SS14.Loader/Program.cs
++++ b/SS14.Loader/Program.cs
+@@ -17,6 +17,7 @@ internal class Program
+     private const string RobustAssemblyName = "Robust.Client";
+ 
+     private readonly IFileApi _fileApi;
++    private AssemblyLoadContext _engineContext = AssemblyLoadContext.Default;
+ 
+     private Program(string robustPath, string[] engineArgs)
+     {
+@@ -33,11 +34,14 @@ internal class Program
+         }
+ 
+         _fileApi = new ZipFileApi(zipArchive, prefix);
++        if (MobileLoader.NativeDirectory is { } nativeDirectory)
++            _engineContext = new MobileEngineLoadContext(_fileApi, nativeDirectory);
+     }
+ 
+     private IntPtr LoadContextOnResolvingUnmanaged(Assembly assembly, string unmanaged)
+     {
+-        var ourDir = Path.GetDirectoryName(typeof(Program).Assembly.Location);
++        var ourDir = MobileLoader.NativeDirectory ?? Path.GetDirectoryName(typeof(Program).Assembly.Location);
++        if (string.IsNullOrEmpty(ourDir)) return IntPtr.Zero;
+         var a = Path.Combine(ourDir!, unmanaged);
+         if (NativeLibrary.TryLoad(a, out var handle))
+             return handle;
+@@ -63,7 +67,8 @@ internal class Program
+ #endif
+ 
+         var launcher = Environment.GetEnvironmentVariable("SS14_LAUNCHER_PATH");
+-        var redialApi = launcher != null ? new RedialApi(launcher) : null;
++        IRedialApi? redialApi = MobileLoader.Redial != null ? new MobileLoader.RedialAdapter() :
++            launcher != null ? new RedialApi(launcher) : null;
+         var contentDb = Environment.GetEnvironmentVariable("SS14_LOADER_CONTENT_DB");
+         var contentVersion = Environment.GetEnvironmentVariable("SS14_LOADER_CONTENT_VERSION");
+         var overlayZip = Environment.GetEnvironmentVariable("SS14_LOADER_OVERLAY_ZIP");
+@@ -136,7 +141,7 @@ internal class Program
+             return false;
+         }
+ 
+-        assembly = AssemblyLoadContext.Default.LoadFromStream(asm, pdb);
++        assembly = _engineContext.LoadFromStream(asm, pdb);
+         return true;
+     }
+ 
+@@ -174,6 +179,11 @@ internal class Program
+ 
+         if (!SignatureAlgorithm.Ed25519.Verify(pubKey, robustBytes, sig))
+         {
++            if (MobileLoader.NativeDirectory != null)
++            {
++                Console.WriteLine("Android engine signature verification failed.");
++                return 2;
++            }
+             // ONLY allow disabling signing on debug mode.
+ #if !RELEASE
+             var disableVar = Environment.GetEnvironmentVariable("SS14_DISABLE_SIGNING");
+diff --git a/SS14.Loader/SS14.Loader.csproj b/SS14.Loader/SS14.Loader.csproj
+index c077825..5bd089a 100644
+--- a/SS14.Loader/SS14.Loader.csproj
++++ b/SS14.Loader/SS14.Loader.csproj
+@@ -3,6 +3,7 @@
+ 
+   <PropertyGroup>
+     <OutputType>WinExe</OutputType>
++    <OutputType Condition="'$(AndroidLauncher)' == 'true'">Library</OutputType>
+     <Nullable>enable</Nullable>
+     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+   </PropertyGroup>
+@@ -32,9 +33,12 @@
+     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Condition="'$(UseSystemSqlite)' != 'True'" />
+     <PackageReference Include="NSec.Cryptography" />
+     <!-- Add libsodium to control version, SpaceWizards.Sodium's dependency is behind -->
+-    <PackageReference Include="libsodium" />
+-    <PackageReference Include="Robust.Natives" />
+-    <PackageReference Include="Robust.Natives.Zstd" />
++    <PackageReference Include="libsodium" Condition="'$(AndroidLauncher)' != 'true'" />
++    <PackageReference Include="libsodium" ExcludeAssets="native" Condition="'$(AndroidLauncher)' == 'true'" />
++    <PackageReference Include="Robust.Natives" Condition="'$(AndroidLauncher)' != 'true'" />
++    <PackageReference Include="Robust.Natives" ExcludeAssets="native" Condition="'$(AndroidLauncher)' == 'true'" />
++    <PackageReference Include="Robust.Natives.Zstd" Condition="'$(AndroidLauncher)' != 'true'" />
++    <PackageReference Include="Robust.Natives.Zstd" ExcludeAssets="native" Condition="'$(AndroidLauncher)' == 'true'" />
+     <PackageReference Include="SharpZstd.Interop" ExcludeAssets="native" />
+     <PackageReference Include="Microsoft.NET.ILLink.Tasks" />
+   </ItemGroup>
