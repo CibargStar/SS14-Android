@@ -2,6 +2,11 @@ name: Publish signed Android test APKs
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Test APK release tag
+        type: string
+        default: android-host-0.4.0-dev
 
 permissions:
   contents: write
@@ -47,6 +52,7 @@ jobs:
       - name: Publish test APKs without distributing private signing keys
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          gh release view android-host-0.3.0-dev --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create android-host-0.3.0-dev --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --title 'SS14 Android 0.3.0 development test' --notes-file staging/notes.md
-          gh release upload android-host-0.3.0-dev --repo "$GITHUB_REPOSITORY" --clobber staging/output/*.apk
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --title "SS14 Android test: $RELEASE_TAG" --notes-file staging/notes.md
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber staging/output/*.apk
