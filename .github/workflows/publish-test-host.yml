@@ -1,0 +1,51 @@
+name: Publish signed Android test APKs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: host-staging
+          path: staging
+      - name: Reassemble and verify locally signed APKs
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess, zipfile
+          stage = pathlib.Path('staging')
+          output = stage / 'output'
+          output.mkdir()
+          signer = pathlib.Path('updates/apk-certificate-sha256.txt').read_text().strip()
+          tools = sorted(pathlib.Path(os.environ['ANDROID_HOME']).glob('build-tools/*/apksigner'))
+          for apk in json.loads((stage / 'apks.json').read_text()):
+              name = apk['name']
+              if pathlib.Path(name).name != name: raise SystemExit('Invalid APK filename')
+              path = output / name
+              with path.open('wb') as target:
+                  for chunk in apk['chunks']:
+                      if pathlib.Path(chunk['name']).name != chunk['name']: raise SystemExit('Invalid chunk name')
+                      data = (stage / chunk['name']).read_bytes()
+                      if hashlib.sha256(data).hexdigest() != chunk['sha256']: raise SystemExit('Corrupt APK chunk')
+                      target.write(data)
+              if hashlib.sha256(path.read_bytes()).hexdigest() != apk['sha256']: raise SystemExit('Corrupt APK')
+              result = subprocess.check_output([str(tools[-1]), 'verify', '--print-certs', str(path)], text=True)
+              if re.search(r'Signer #1 certificate SHA-256 digest: (\w+)', result).group(1) != signer:
+                  raise SystemExit('APK signer does not match the established test channel')
+              with zipfile.ZipFile(path) as archive:
+                  if archive.read('assets/android_signing_key') != pathlib.Path('updates/android-engine-public.pub').read_bytes():
+                      raise SystemExit('APK does not pin the established engine channel key')
+              print('Verified APK:', name, apk['sha256'])
+          PY
+      - name: Publish test APKs without distributing private signing keys
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-host-0.3.0-dev --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create android-host-0.3.0-dev --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --title 'SS14 Android 0.3.0 development test' --notes-file staging/notes.md
+          gh release upload android-host-0.3.0-dev --repo "$GITHUB_REPOSITORY" --clobber staging/output/*.apk
