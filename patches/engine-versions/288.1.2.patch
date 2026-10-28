@@ -263,8 +263,21 @@ index 60fabdc..3493523 100644
                  GC.Collect();
              }
  
+diff --git a/Robust.Client/Graphics/ClientEye/EyeManager.cs b/Robust.Client/Graphics/ClientEye/EyeManager.cs
+index 8c5ff48..6c5e187 100644
+--- a/Robust.Client/Graphics/ClientEye/EyeManager.cs
++++ b/Robust.Client/Graphics/ClientEye/EyeManager.cs
+@@ -80,7 +80,7 @@ namespace Robust.Client.Graphics
+             var bottomLeft = ScreenToMap(new Vector2(0, vpSize.Y)).Position;
+ 
+             // This assumes the main viewports eye and the main eye are the same.
+-            var rotation = new Angle(CurrentEye.Rotation);
++            var rotation = new Angle(UserInterface.Mobile.MobileCameraTransform.For(CurrentEye)!.Rotation);
+             var center = (bottomLeft + topRight) / 2;
+ 
+             var localTopRight = topRight - center;
 diff --git a/Robust.Client/Graphics/Clyde/Clyde.Events.cs b/Robust.Client/Graphics/Clyde/Clyde.Events.cs
-index 029d12c..3ff4be2 100644
+index 029d12c..735aa75 100644
 --- a/Robust.Client/Graphics/Clyde/Clyde.Events.cs
 +++ b/Robust.Client/Graphics/Clyde/Clyde.Events.cs
 @@ -1,4 +1,4 @@
@@ -273,20 +286,48 @@ index 029d12c..3ff4be2 100644
  #if EXCEPTION_TOLERANCE
  #define EXCEPTION_TOLERANCE_LOCAL
  using System;
-@@ -87,6 +87,9 @@ namespace Robust.Client.Graphics.Clyde
+@@ -6,6 +6,9 @@ using Robust.Shared.Log;
+ #endif
+ 
+ using System.Collections.Generic;
++using System.Numerics;
++using Robust.Client.UserInterface.Mobile;
++using Robust.Shared.Map;
+ using OpenToolkit.Graphics.OpenGL4;
+ using Robust.Client.Input;
+ using Robust.Shared.Maths;
+@@ -87,6 +90,10 @@ namespace Robust.Client.Graphics.Clyde
                  case DEventInputModeChanged:
                      RaiseInputModeChanged();
                      break;
 +                case DEventTouchFinger(var args):
++                    args.EmitMouse = DispatchTouchMouse;
 +                    TouchFinger?.Invoke(args);
 +                    break;
              }
          }
  
-@@ -163,9 +166,16 @@ namespace Robust.Client.Graphics.Clyde
+@@ -163,9 +170,33 @@ namespace Robust.Client.Graphics.Clyde
              _eventDispatchQueue.Enqueue(new DEventInputModeChanged());
          }
  
++        private void DispatchTouchMouse(TouchMouseAction action, ScreenCoordinates coordinates)
++        {
++            foreach (var window in _windows)
++            {
++                if (window.Id != coordinates.Window) continue;
++                var delta = coordinates.Position - window.LastMousePos;
++                window.LastMousePos = coordinates.Position;
++                _currentHoveredWindow = window;
++                MouseMove?.Invoke(new MouseMoveEventArgs(delta, coordinates));
++                if (action == TouchMouseAction.Move) return;
++                var key = new KeyEventArgs(Keyboard.Key.MouseLeft, false, false, false, false, false, 0);
++                if (action == TouchMouseAction.Down) KeyDown?.Invoke(key);
++                else KeyUp?.Invoke(key);
++                return;
++            }
++        }
++
 +        private void SendTouchFinger(TouchFingerEventArgs ev)
 +        {
 +            _eventDispatchQueue.Enqueue(new DEventTouchFinger(ev));
@@ -349,8 +390,26 @@ index 1dc619d..632fd50 100644
                  }
  
                  return program;
+diff --git a/Robust.Client/Graphics/Clyde/Clyde.Viewport.cs b/Robust.Client/Graphics/Clyde/Clyde.Viewport.cs
+index a474f28..163a4c0 100644
+--- a/Robust.Client/Graphics/Clyde/Clyde.Viewport.cs
++++ b/Robust.Client/Graphics/Clyde/Clyde.Viewport.cs
+@@ -253,7 +253,12 @@ namespace Robust.Client.Graphics.Clyde
+             IRenderTexture IClydeViewport.RenderTarget => RenderTarget;
+             IRenderTexture IClydeViewport.LightRenderTarget => LightRenderTarget;
+             IRenderTexture IClydeViewport.FovRenderTarget => _clyde._fovRenderTarget;
+-            public IEye? Eye { get; set; }
++            private IEye? _eye;
++            public IEye? Eye
++            {
++                get => UserInterface.Mobile.MobileCameraTransform.For(_eye);
++                set => _eye = value;
++            }
+         }
+ 
+         private sealed class ViewportDisposeData
 diff --git a/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs b/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
-index f7a11f0..c87f841 100644
+index f7a11f0..9fa7055 100644
 --- a/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
 +++ b/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
 @@ -1,4 +1,4 @@
@@ -367,6 +426,15 @@ index f7a11f0..c87f841 100644
          public event Action<WindowRequestClosedEventArgs>? CloseWindow;
          public event Action<WindowDestroyedEventArgs>? DestroyWindow;
          public event Action<WindowContentScaleEventArgs>? OnWindowScaleChanged;
+@@ -415,7 +416,7 @@ namespace Robust.Client.Graphics.Clyde
+ 
+         private void WindowModeChanged(int mode)
+         {
+-            _windowMode = (WindowMode) mode;
++            _windowMode = OperatingSystem.IsAndroid() ? WindowMode.Fullscreen : (WindowMode) mode;
+             _windowing?.UpdateMainWindowMode();
+         }
+ 
 diff --git a/Robust.Client/Graphics/Clyde/ClydeHeadless.cs b/Robust.Client/Graphics/Clyde/ClydeHeadless.cs
 index 42e1981..c77a778 100644
 --- a/Robust.Client/Graphics/Clyde/ClydeHeadless.cs
@@ -856,7 +924,7 @@ index bf70f22..42b6023 100644
          }
  
 diff --git a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs
-index a02709b..d57ddf6 100644
+index a02709b..155cf1e 100644
 --- a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs
 +++ b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs
 @@ -1,4 +1,4 @@
@@ -865,7 +933,15 @@ index a02709b..d57ddf6 100644
  using System.Runtime.CompilerServices;
  using System.Runtime.InteropServices;
  using System.Threading;
-@@ -65,6 +65,7 @@ internal partial class Clyde
+@@ -54,6 +54,7 @@ internal partial class Clyde
+             SDL.SDL_SetLogOutputFunction(&LogOutputFunction, (void*) GCHandle.ToIntPtr(_selfGCHandle));
+ 
+             SDL.SDL_SetHint(SDL.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
++            if (OperatingSystem.IsAndroid()) SDL.SDL_SetHint(SDL.SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+             SDL.SDL_SetHint(SDL.SDL_HINT_IME_IMPLEMENTED_UI, "composition");
+ 
+             // SDL3's GameInput support is currently broken and leaving it on
+@@ -65,6 +66,7 @@ internal partial class Clyde
              SDL.SDL_SetHint(SDL.SDL_HINT_MAC_OPENGL_ASYNC_DISPATCH, "1");
  #endif
  
@@ -961,13 +1037,14 @@ index e689fb1..0e31a90 100644
              var hasCanFocus = false;
 diff --git a/Robust.Client/Input/TouchFingerEventArgs.cs b/Robust.Client/Input/TouchFingerEventArgs.cs
 new file mode 100644
-index 0000000..c139d8f
+index 0000000..d781dab
 --- /dev/null
 +++ b/Robust.Client/Input/TouchFingerEventArgs.cs
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,29 @@
 +using System;
 +using System.Numerics;
 +using Robust.Shared.Map;
++using Robust.Client.UserInterface.Mobile;
 +
 +namespace Robust.Client.Input;
 +
@@ -981,6 +1058,7 @@ index 0000000..c139d8f
 +
 +public sealed class TouchFingerEventArgs : EventArgs
 +{
++    internal Action<TouchMouseAction, ScreenCoordinates>? EmitMouse { get; set; }
 +    public TouchFingerAction Action { get; }
 +    public long FingerId { get; }
 +    public ScreenCoordinates Coordinates { get; }
@@ -1179,12 +1257,247 @@ index 29c54bc..7d546ec 100644
      }
  }
 -
+diff --git a/Robust.Client/UserInterface/Mobile/CameraTouchState.cs b/Robust.Client/UserInterface/Mobile/CameraTouchState.cs
+new file mode 100644
+index 0000000..b7f9865
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/CameraTouchState.cs
+@@ -0,0 +1,167 @@
++using System;
++using System.Collections.Generic;
++using System.Numerics;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++internal enum CameraTouchTarget { World, Interface, Overlay }
++internal enum TouchMouseAction { Move, Down, Up, Cancel }
++
++/// <summary>Arbitrates world taps/drags and two-finger camera gestures before mouse input.</summary>
++internal sealed class CameraTouchState
++{
++    private sealed class Contact(Vector2 position, CameraTouchTarget target, double time)
++    {
++        public Vector2 Position = position;
++        public readonly Vector2 Start = position;
++        public readonly double Started = time;
++        public readonly CameraTouchTarget Target = target;
++        public bool Ignored;
++    }
++
++    private readonly Dictionary<long, Contact> _contacts = new();
++    private long? _mouseOwner;
++    private bool _mouseDown;
++    private (long First, long Second)? _pair;
++    private Vector2? _lastVector;
++    private Vector2 _initialVector;
++    private bool _pinching;
++    private bool _rotating;
++    public event Action<TouchMouseAction, Vector2>? Mouse;
++    public event Action<float, float>? Transform;
++    public bool GestureActive => _pair != null;
++
++    public void Down(long id, Vector2 position, CameraTouchTarget target, double time)
++    {
++        if (!Valid(position) || _contacts.ContainsKey(id)) return;
++        var contact = new Contact(position, target, time);
++        _contacts.Add(id, contact);
++        if (target == CameraTouchTarget.Overlay) return;
++        if (target == CameraTouchTarget.World)
++        {
++            foreach (var other in _contacts.Values)
++                if (other.Ignored && other.Target == CameraTouchTarget.World) { contact.Ignored = true; return; }
++        }
++        if (target == CameraTouchTarget.World && _pair == null && !_mouseDown)
++        {
++            foreach (var (otherId, other) in _contacts)
++            {
++                if (otherId == id || other.Ignored || other.Target != CameraTouchTarget.World) continue;
++                _pair = (otherId, id);
++                _mouseOwner = null;
++                _lastVector = null;
++                _pinching = _rotating = false;
++                Rebase();
++                return;
++            }
++        }
++        if (_mouseOwner != null || _pair != null)
++        {
++            contact.Ignored = true;
++            return;
++        }
++        _mouseOwner = id;
++        if (target == CameraTouchTarget.Interface) BeginMouse(contact);
++    }
++
++    public void Move(long id, Vector2 position)
++    {
++        if (!_contacts.TryGetValue(id, out var contact)) return;
++        if (!Valid(position)) { Invalidate(id); return; }
++        contact.Position = position;
++        if (contact.Ignored) return;
++        if (_pair is { } pair && (id == pair.First || id == pair.Second))
++        {
++            var vector = _contacts[pair.Second].Position - _contacts[pair.First].Position;
++            if (vector.LengthSquared() < 24 * 24) { _lastVector = null; return; }
++            if (_lastVector is not { } previous) { _lastVector = _initialVector = vector; _pinching = _rotating = false; return; }
++            var zoomReference = _pinching ? previous : _initialVector;
++            var rotationReference = _rotating ? previous : _initialVector;
++            var ratio = vector.Length() / zoomReference.Length();
++            var angle = MathF.Atan2(rotationReference.X * vector.Y - rotationReference.Y * vector.X, Vector2.Dot(rotationReference, vector));
++            if (!_pinching && MathF.Abs(MathF.Log(ratio)) >= 0.03f) _pinching = true;
++            if (!_rotating && MathF.Abs(angle) >= MathF.PI / 60) _rotating = true;
++            if (_pinching || _rotating)
++            {
++                Transform?.Invoke(_pinching ? ratio : 1, _rotating ? angle : 0);
++                _lastVector = vector;
++            }
++            return;
++        }
++        if (_mouseOwner != id) return;
++        if (!_mouseDown && Vector2.DistanceSquared(position, contact.Start) >= 12 * 12) BeginMouse(contact);
++        if (_mouseDown) Mouse?.Invoke(TouchMouseAction.Move, position);
++    }
++
++    public void Update(double time)
++    {
++        if (_pair == null && !_mouseDown && _mouseOwner is { } id && _contacts.TryGetValue(id, out var contact)
++            && !contact.Ignored && time - contact.Started >= 0.35)
++            BeginMouse(contact);
++    }
++
++    public void Up(long id, bool cancelled)
++    {
++        if (!_contacts.TryGetValue(id, out var contact)) return;
++        if (_pair is { } pair && (id == pair.First || id == pair.Second)) EndPair();
++        if (_mouseOwner == id)
++        {
++            if (!contact.Ignored && !cancelled && !_mouseDown) BeginMouse(contact);
++            if (_mouseDown) Mouse?.Invoke(cancelled ? TouchMouseAction.Cancel : TouchMouseAction.Up, contact.Position);
++            _mouseOwner = null;
++            _mouseDown = false;
++        }
++        _contacts.Remove(id);
++    }
++
++    public void Invalidate(long id)
++    {
++        if (!_contacts.TryGetValue(id, out var contact)) return;
++        contact.Ignored = true;
++        if (_pair is { } pair && (id == pair.First || id == pair.Second)) EndPair();
++        if (_mouseOwner == id)
++        {
++            if (_mouseDown) Mouse?.Invoke(TouchMouseAction.Cancel, contact.Position);
++            _mouseOwner = null;
++            _mouseDown = false;
++        }
++    }
++
++    public void Cancel()
++    {
++        if (_mouseDown && _mouseOwner is { } id && _contacts.TryGetValue(id, out var contact))
++            Mouse?.Invoke(TouchMouseAction.Cancel, contact.Position);
++        _contacts.Clear();
++        _mouseOwner = null;
++        _mouseDown = false;
++        _pair = null;
++        _lastVector = null;
++        _pinching = _rotating = false;
++    }
++
++    private void BeginMouse(Contact contact)
++    {
++        _mouseDown = true;
++        Mouse?.Invoke(TouchMouseAction.Move, contact.Start);
++        Mouse?.Invoke(TouchMouseAction.Down, contact.Start);
++    }
++
++    private void Rebase()
++    {
++        if (_pair is not { } pair) return;
++        var vector = _contacts[pair.Second].Position - _contacts[pair.First].Position;
++        if (vector.LengthSquared() >= 24 * 24) _lastVector = _initialVector = vector;
++    }
++
++    private void EndPair()
++    {
++        if (_pair is not { } pair) return;
++        _contacts[pair.First].Ignored = true;
++        _contacts[pair.Second].Ignored = true;
++        _pair = null;
++        _lastVector = null;
++        _pinching = _rotating = false;
++    }
++
++    private static bool Valid(Vector2 value) => float.IsFinite(value.X) && float.IsFinite(value.Y);
++}
+diff --git a/Robust.Client/UserInterface/Mobile/MobileCameraTransform.cs b/Robust.Client/UserInterface/Mobile/MobileCameraTransform.cs
+new file mode 100644
+index 0000000..1d00f75
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileCameraTransform.cs
+@@ -0,0 +1,56 @@
++using System;
++using System.Numerics;
++using Robust.Shared.Graphics;
++using Robust.Shared.Map;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++/// <summary>Local optical magnification and rotation; never changes server eye/FOV data.</summary>
++internal static class MobileCameraTransform
++{
++    private static IEye? _source;
++    private static CameraEye? _view;
++    public static float Magnification { get; private set; } = 1;
++    public static float Rotation { get; private set; }
++
++    public static void Bind(IEye eye)
++    {
++        if (ReferenceEquals(_source, eye)) return;
++        _source = eye;
++        _view = new CameraEye(eye);
++        Magnification = 1;
++        Rotation = 0;
++    }
++
++    public static void Apply(float distanceRatio, float angle)
++    {
++        if (!float.IsFinite(distanceRatio) || distanceRatio <= 0 || !float.IsFinite(angle)) return;
++        // Magnify the server's normal view and allow returning to its baseline.
++        Magnification = Math.Clamp(Magnification * distanceRatio, 1, 4);
++        Rotation = MathF.IEEERemainder(Rotation - angle, MathF.Tau);
++    }
++
++    public static IEye? For(IEye? eye) => eye != null && ReferenceEquals(eye, _source)
++        && (Magnification != 1 || Rotation != 0) ? _view : eye;
++
++    private sealed class CameraEye(IEye source) : IEye
++    {
++        public bool DrawFov { get => source.DrawFov; set => source.DrawFov = value; }
++        public bool DrawLight { get => source.DrawLight; set => source.DrawLight = value; }
++        public MapCoordinates Position => source.Position;
++        public Vector2 Offset { get => source.Offset; set => source.Offset = value; }
++        public Angle Rotation { get => source.Rotation + new Angle(MobileCameraTransform.Rotation); set => source.Rotation = value - new Angle(MobileCameraTransform.Rotation); }
++        public Vector2 Scale { get => source.Scale * Magnification; set => source.Scale = value / Magnification; }
++        public Vector2 Zoom { get => source.Zoom / Magnification; set => source.Zoom = value * Magnification; }
++        public void GetViewMatrix(out Matrix3x2 matrix, Vector2 renderScale) =>
++            matrix = Matrix3Helpers.CreateInverseTransform(Position.Position.X + Offset.X, Position.Position.Y + Offset.Y,
++                (float)-Rotation.Theta, 1 / (Scale.X * renderScale.X), 1 / (Scale.Y * renderScale.Y));
++        public void GetViewMatrixNoOffset(out Matrix3x2 matrix, Vector2 renderScale) =>
++            matrix = Matrix3Helpers.CreateInverseTransform(Position.Position.X, Position.Position.Y,
++                (float)-Rotation.Theta, 1 / (Scale.X * renderScale.X), 1 / (Scale.Y * renderScale.Y));
++        public void GetViewMatrixInv(out Matrix3x2 matrix, Vector2 renderScale) =>
++            matrix = Matrix3Helpers.CreateTransform(Position.Position.X + Offset.X, Position.Position.Y + Offset.Y,
++                (float)-Rotation.Theta, 1 / (Scale.X * renderScale.X), 1 / (Scale.Y * renderScale.Y));
++    }
++}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
 new file mode 100644
-index 0000000..04b7256
+index 0000000..ba96e89
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
-@@ -0,0 +1,1186 @@
+@@ -0,0 +1,1187 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Globalization;
@@ -1207,6 +1520,7 @@ index 0000000..04b7256
 +
 +public sealed partial class MobileControlsOverlay : Control
 +{
++    public bool BlocksWorldGestures => _modalOverlay.Visible || IsEditMode;
 +    [Dependency] private IConfigurationManager _cfg = default!;
 +    [Dependency] private IUserInterfaceManagerInternal _uiMgr = default!;
 +    [Dependency] private IClyde _clyde = default!;
@@ -2460,6 +2774,103 @@ index 0000000..b4d5757
 +        return Math.Clamp(selectedScale, 0.6f, 3f) * responsive / Math.Clamp(uiScale, 0.25f, 3f);
 +    }
 +}
+diff --git a/Robust.Client/UserInterface/Mobile/MobileTouchController.cs b/Robust.Client/UserInterface/Mobile/MobileTouchController.cs
+new file mode 100644
+index 0000000..888d85f
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileTouchController.cs
+@@ -0,0 +1,91 @@
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using Robust.Client.Graphics;
++using Robust.Client.Input;
++using Robust.Shared.Graphics;
++using Robust.Shared.Map;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++internal sealed class MobileTouchController
++{
++    private readonly CameraTouchState _state = new();
++    private readonly IEyeManager _eyes;
++    private readonly Func<ScreenCoordinates, bool> _freeWorld;
++    private readonly Action _cancelMouseFocus;
++    private readonly Dictionary<long, ScreenCoordinates> _worldTouches = new();
++    private Action<TouchMouseAction, ScreenCoordinates>? _emit;
++    private ScreenCoordinates _screen;
++    private float _scale = 1;
++    private IEye? _lastEye;
++
++    public MobileTouchController(IClyde clyde, IEyeManager eyes, Func<ScreenCoordinates, bool> freeWorld, Action cancelMouseFocus)
++    {
++        _eyes = eyes;
++        _freeWorld = freeWorld;
++        _cancelMouseFocus = cancelMouseFocus;
++        _state.Transform += MobileCameraTransform.Apply;
++        _state.Mouse += (action, position) =>
++        {
++            if (action == TouchMouseAction.Cancel) _cancelMouseFocus();
++            _emit?.Invoke(action, new ScreenCoordinates(position * _scale, _screen.Window));
++        };
++        clyde.OnWindowFocused += args => { if (!args.Focused) Cancel(); };
++        clyde.OnWindowResized += _ => Cancel();
++    }
++
++    private static double Now => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
++
++    public void Handle(TouchFingerEventArgs args, bool overlayHandled, float scale)
++    {
++        Update();
++        if (args.EmitMouse != null) _emit = args.EmitMouse;
++        if (args.Action == TouchFingerAction.Down)
++        {
++            // UI pointer emulation is tied to one window and its current scale.
++            if (_screen.Window != args.Coordinates.Window || _scale != scale) Cancel();
++            _screen = args.Coordinates;
++            _scale = scale > 0 && float.IsFinite(scale) ? scale : 1;
++            var world = !overlayHandled && _freeWorld(args.Coordinates);
++            if (world) _worldTouches[args.FingerId] = args.Coordinates;
++            _state.Down(args.FingerId, args.Coordinates.Position / _scale,
++                overlayHandled ? CameraTouchTarget.Overlay : world ? CameraTouchTarget.World : CameraTouchTarget.Interface, Now);
++        }
++        else if (args.Action == TouchFingerAction.Motion)
++        {
++            if (_worldTouches.ContainsKey(args.FingerId))
++            {
++                _worldTouches[args.FingerId] = args.Coordinates;
++                if (!_freeWorld(args.Coordinates)) _state.Invalidate(args.FingerId);
++            }
++            _state.Move(args.FingerId, args.Coordinates.Position / _scale);
++        }
++        else
++        {
++            if (_worldTouches.ContainsKey(args.FingerId) && !_freeWorld(args.Coordinates)) _state.Invalidate(args.FingerId);
++            _state.Up(args.FingerId, args.Action == TouchFingerAction.Cancel);
++            _worldTouches.Remove(args.FingerId);
++        }
++    }
++
++    public void Update()
++    {
++        var eye = _eyes.CurrentEye;
++        if (!ReferenceEquals(_lastEye, eye))
++        {
++            Cancel();
++            _lastEye = eye;
++            MobileCameraTransform.Bind(eye);
++        }
++        foreach (var (id, position) in _worldTouches)
++            if (!_freeWorld(position)) _state.Invalidate(id);
++        _state.Update(Now);
++    }
++
++    private void Cancel()
++    {
++        _state.Cancel();
++        _worldTouches.Clear();
++    }
++}
 diff --git a/Robust.Client/UserInterface/Mobile/PojavActionButton.cs b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
 new file mode 100644
 index 0000000..76ca27d
@@ -2839,10 +3250,10 @@ index 0000000..76ca27d
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/ThumbstickState.cs b/Robust.Client/UserInterface/Mobile/ThumbstickState.cs
 new file mode 100644
-index 0000000..7765ffc
+index 0000000..cdde4db
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/ThumbstickState.cs
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,117 @@
 +using System;
 +using System.Numerics;
 +
@@ -2861,6 +3272,20 @@ index 0000000..7765ffc
 +/// <summary>Pointer ownership and stable eight-way movement, independent of frame rate.</summary>
 +internal sealed class ThumbstickState
 +{
++    public static StickDirection CameraRelative(StickDirection direction, float rotation)
++    {
++        if (direction == StickDirection.None || !float.IsFinite(rotation)) return direction;
++        var x = ((direction & StickDirection.Right) != 0 ? 1 : 0) - ((direction & StickDirection.Left) != 0 ? 1 : 0);
++        var y = ((direction & StickDirection.Down) != 0 ? 1 : 0) - ((direction & StickDirection.Up) != 0 ? 1 : 0);
++        var angle = MathF.Atan2(y, x) + rotation;
++        return ((int)MathF.Floor((angle + MathF.PI / 8) / (MathF.PI / 4)) & 7) switch
++        {
++            0 => StickDirection.Right, 1 => StickDirection.Down | StickDirection.Right,
++            2 => StickDirection.Down, 3 => StickDirection.Down | StickDirection.Left,
++            4 => StickDirection.Left, 5 => StickDirection.Up | StickDirection.Left,
++            6 => StickDirection.Up, _ => StickDirection.Up | StickDirection.Right,
++        };
++    }
 +    private const float SectorAngle = MathF.PI / 4;
 +    private const float AngularHysteresis = MathF.PI / 36; // Five degrees.
 +    private int? _sector;
@@ -2948,10 +3373,10 @@ index 0000000..7765ffc
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
 new file mode 100644
-index 0000000..7520d20
+index 0000000..1c1d5c3
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
-@@ -0,0 +1,308 @@
+@@ -0,0 +1,318 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Numerics;
@@ -2961,6 +3386,7 @@ index 0000000..7520d20
 +using Robust.Shared.Input;
 +using Robust.Shared.IoC;
 +using Robust.Shared.Maths;
++using Robust.Shared.Timing;
 +
 +namespace Robust.Client.UserInterface.Mobile;
 +
@@ -2982,6 +3408,7 @@ index 0000000..7520d20
 +    public bool IsPressed => _isPressed;
 +
 +    private readonly ThumbstickState _stick = new();
++    private float _lastCameraRotation;
 +    private bool _isPressed => _stick.IsPressed;
 +    private Vector2 _knobOffset => _stick.Offset;
 +    private Vector2? _dragTouchOffset;
@@ -3170,13 +3597,21 @@ index 0000000..7520d20
 +
 +    private void ApplyMovement()
 +    {
++        _lastCameraRotation = MobileCameraTransform.Rotation;
++        var movement = ThumbstickState.CameraRelative(_stick.Direction, _lastCameraRotation);
 +        if (_stick.Direction != StickDirection.None) OnStickSteering?.Invoke();
 +        // Release old directions before pressing new ones, including a direct
 +        // reversal, so the original input stack never sees opposing keys held.
 +        foreach (var (key, direction) in MovementKeys)
-+            if ((_stick.Direction & direction) == 0) SetMovementKey(key, false);
++            if ((movement & direction) == 0) SetMovementKey(key, false);
 +        foreach (var (key, direction) in MovementKeys)
-+            if ((_stick.Direction & direction) != 0) SetMovementKey(key, true);
++            if ((movement & direction) != 0) SetMovementKey(key, true);
++    }
++
++    protected override void FrameUpdate(FrameEventArgs args)
++    {
++        base.FrameUpdate(args);
++        if (_isPressed && _lastCameraRotation != MobileCameraTransform.Rotation) ApplyMovement();
 +    }
 +
 +    private void SetMovementKey(Keyboard.Key key, bool down)
@@ -3210,10 +3645,10 @@ index 0000000..7520d20
 +
 +        handle.DrawCircle(center, radius * 0.55f, new Color(255, 255, 255, 25), false);
 +
-+        var wActive = _activeKeys.Contains(Keyboard.Key.W);
-+        var sActive = _activeKeys.Contains(Keyboard.Key.S);
-+        var aActive = _activeKeys.Contains(Keyboard.Key.A);
-+        var dActive = _activeKeys.Contains(Keyboard.Key.D);
++        var wActive = (_stick.Direction & StickDirection.Up) != 0;
++        var sActive = (_stick.Direction & StickDirection.Down) != 0;
++        var aActive = (_stick.Direction & StickDirection.Left) != 0;
++        var dActive = (_stick.Direction & StickDirection.Right) != 0;
 +
 +        var activeColor = new Color(255, 225, 60, 255);
 +        var inactiveColor = new Color(255, 255, 255, 140);
@@ -3261,10 +3696,18 @@ index 0000000..7520d20
 +    }
 +}
 diff --git a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs b/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
-index 274aa2a..f8a5fe9 100644
+index 274aa2a..48560bc 100644
 --- a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
 +++ b/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
-@@ -46,6 +46,29 @@ internal partial class UserInterfaceManager
+@@ -16,6 +16,7 @@ namespace Robust.Client.UserInterface;
+ 
+ internal partial class UserInterfaceManager
+ {
++    private Mobile.MobileTouchController? _mobileTouch;
+     private float _tooltipTimer;
+     private ICursor? _worldCursor;
+     private bool _needUpdateActiveCursor;
+@@ -46,6 +47,29 @@ internal partial class UserInterfaceManager
      private const float TooltipDelay = 0.25f;
      private readonly Dictionary<BoundKeyFunction, Control> _focusedControls = new();
  
@@ -3294,7 +3737,7 @@ index 274aa2a..f8a5fe9 100644
      private WindowRoot? _focusedRoot;
  
      private static (Control control, Vector2 rel)? MouseFindControlAtPos(Control control, Vector2 position)
-@@ -103,6 +126,15 @@ internal partial class UserInterfaceManager
+@@ -103,6 +127,15 @@ internal partial class UserInterfaceManager
              return;
          }
  
@@ -3310,7 +3753,7 @@ index 274aa2a..f8a5fe9 100644
          var guiArgs = new GUIBoundKeyEventArgs(args.Function, args.State, args.PointerLocation, args.CanFocus,
              args.PointerLocation.Position / control.UIScale - control.GlobalPosition,
              args.PointerLocation.Position - control.GlobalPixelPosition);
-@@ -121,6 +153,21 @@ internal partial class UserInterfaceManager
+@@ -121,6 +154,21 @@ internal partial class UserInterfaceManager
  
      public void KeyBindUp(BoundKeyEventArgs args)
      {
@@ -3332,7 +3775,7 @@ index 274aa2a..f8a5fe9 100644
          // Only raise keybind-up for the control on which we previously raised keybind-down
          if (!_focusedControls.Remove(args.Function, out var control) || !control.VisibleInTree)
              return;
-@@ -140,6 +187,63 @@ internal partial class UserInterfaceManager
+@@ -140,6 +188,63 @@ internal partial class UserInterfaceManager
      public void MouseMove(MouseMoveEventArgs mouseMoveEventArgs)
      {
          _resetTooltipTimer();
@@ -3396,17 +3839,22 @@ index 274aa2a..f8a5fe9 100644
          // Update which control is considered hovered.
          var newHovered = MouseGetControl(mouseMoveEventArgs.Position);
          SetHovered(newHovered);
-@@ -583,4 +687,12 @@ internal partial class UserInterfaceManager
+@@ -583,4 +688,17 @@ internal partial class UserInterfaceManager
  
          return pos - control.GlobalPosition;
      }
 +
 +    public void TouchFinger(TouchFingerEventArgs args)
 +    {
-+        if (MobileOverlay != null && MobileOverlay.VisibleInTree)
-+        {
-+            MobileOverlay.HandleTouch(args);
-+        }
++        if (!OperatingSystem.IsAndroid() && MobileOverlay == null) return;
++        _mobileTouch ??= new Mobile.MobileTouchController(_clyde, _eyeManager,
++            point => _modalStack.Count == 0 && !Mobile.MobileControlsOverlay.IsEditMode
++                && MobileOverlay?.BlocksWorldGestures != true && _eyeManager.CurrentMap != MapId.Nullspace
++                && MouseGetControl(point) is IViewportControl viewport && ReferenceEquals(viewport, _eyeManager.MainViewport),
++            () => { _focusedControls.Remove(EngineKeyFunctions.UIClick); ControlFocused = null; });
++        var overlayHandled = MobileOverlay?.VisibleInTree == true && MobileOverlay.HandleTouch(args);
++        var scale = _windowsToRoot.TryGetValue(args.Coordinates.Window, out var root) ? root.UIScale : 1;
++        _mobileTouch.Handle(args, overlayHandled, scale);
 +    }
  }
 diff --git a/Robust.Client/UserInterface/UserInterfaceManager.Scaling.cs b/Robust.Client/UserInterface/UserInterfaceManager.Scaling.cs
@@ -3469,7 +3917,7 @@ index 56d96c1..3e7873c 100644
              var osScale = CalculateUIScale(root.Window.ContentScale.X, _configurationManager);
  
 diff --git a/Robust.Client/UserInterface/UserInterfaceManager.cs b/Robust.Client/UserInterface/UserInterfaceManager.cs
-index 57c86c3..9726191 100644
+index 57c86c3..6b6d7c1 100644
 --- a/Robust.Client/UserInterface/UserInterfaceManager.cs
 +++ b/Robust.Client/UserInterface/UserInterfaceManager.cs
 @@ -52,6 +52,7 @@ namespace Robust.Client.UserInterface
@@ -3495,6 +3943,14 @@ index 57c86c3..9726191 100644
          }
  
          public void InitializeTesting()
+@@ -212,6 +221,7 @@ namespace Robust.Client.UserInterface
+ 
+         public void FrameUpdate(FrameEventArgs args)
+         {
++            _mobileTouch?.Update();
+             using (_prof.Group("Update"))
+             {
+                 // Update hovered. Can't rely upon mouse movement due to New controls potentially coming up.
 diff --git a/Robust.Client/Utility/ClientDllMap.cs b/Robust.Client/Utility/ClientDllMap.cs
 index f0ef496..002ae0a 100644
 --- a/Robust.Client/Utility/ClientDllMap.cs

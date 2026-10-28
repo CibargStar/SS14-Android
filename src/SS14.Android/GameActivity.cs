@@ -4,6 +4,8 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using Android.Views;
+using AndroidX.Core.View;
 using System.Text.Json;
 using SS14.Launcher.Models;
 using SDLActivity = ppysdl::Org.Libsdl.App.SDLActivity;
@@ -32,6 +34,46 @@ public sealed class GameActivity : SDLActivity
         _gameDirectory = Path.Combine(FilesDir.AbsolutePath, "client");
         Directory.CreateDirectory(_gameDirectory);
         base.OnCreate(savedInstanceState);
+        ApplyFullscreen();
+    }
+
+    private void ApplyFullscreen()
+    {
+        if (Window is not { } window) return;
+        WindowCompat.SetDecorFitsSystemWindows(window, false);
+        window.AddFlags(WindowManagerFlags.Fullscreen);
+        var controller = WindowCompat.GetInsetsController(window, window.DecorView);
+        controller.SystemBarsBehavior = WindowInsetsControllerCompat.BehaviorShowTransientBarsBySwipe;
+        controller.Hide(WindowInsetsCompat.Type.SystemBars());
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.P && window.Attributes is { } attributes)
+        {
+            attributes.LayoutInDisplayCutoutMode = LayoutInDisplayCutoutMode.ShortEdges;
+            window.Attributes = attributes;
+        }
+    }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        ApplyFullscreen();
+        // SDL also updates window flags while resuming; apply after its work.
+        Window?.DecorView.Post(ApplyFullscreen);
+    }
+
+    public override void OnWindowFocusChanged(bool hasFocus)
+    {
+        base.OnWindowFocusChanged(hasFocus);
+        if (hasFocus)
+        {
+            ApplyFullscreen();
+            Window?.DecorView.Post(ApplyFullscreen);
+        }
+    }
+
+    public override void OnConfigurationChanged(global::Android.Content.Res.Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        ApplyFullscreen();
     }
 
     protected override string[] GetLibraries() => ["SDL3", "sodium", "zstd", "freetype", "openal"];

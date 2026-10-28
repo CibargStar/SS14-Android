@@ -74,4 +74,12 @@ for (var angle = -360; angle <= 360; angle++)
     stick.Cancel();
 }
 Check(true, "full angle sweep never presses opposite keys or loses a direction");
+Check(ThumbstickState.CameraRelative(StickDirection.Up, -MathF.PI / 2) == StickDirection.Left,
+    "stick up remains screen-up after clockwise camera rotation");
+Check(ThumbstickState.CameraRelative(StickDirection.Up, MathF.PI / 2) == StickDirection.Right,
+    "stick up remains screen-up after counter-clockwise camera rotation");
+Check(ThumbstickState.CameraRelative(StickDirection.Up | StickDirection.Right, MathF.PI) == (StickDirection.Down | StickDirection.Left),
+    "diagonal movement follows a half-turn camera rotation");
+Check(ThumbstickState.CameraRelative(StickDirection.None, 1) == StickDirection.None,
+    "rotating the camera cannot start walking with an idle stick");
 Console.WriteLine($"PASS {checks} thumbstick checks");

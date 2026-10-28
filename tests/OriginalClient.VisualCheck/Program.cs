@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Numerics;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using SS14.Loader;
@@ -115,6 +116,119 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
             }
             await Capture("main-menu");
             var overlay = await OnMain(() => Get(ui, "MobileOverlay")!);
+            if (Environment.GetEnvironmentVariable("SS14_CHECK_CAMERA") == "1")
+            {
+                await OnMain(() =>
+                {
+                    void Assert(bool result, string name)
+                    {
+                        if (!result) throw new Exception("Camera integration: " + name);
+                        Console.WriteLine("CAMERA PASS " + name);
+                    }
+                    var eyesType = client.GetType("Robust.Client.Graphics.IEyeManager", true)!;
+                    var eyes = Resolve(eyesType);
+                    var oldEye = Get(eyes, "CurrentEye")!;
+                    var entities = Resolve(shared.GetType("Robust.Shared.GameObjects.IEntityManager", true)!);
+                    if (Get(entities, "Started") is not true) entities.GetType().GetMethod("Startup")!.Invoke(entities, null);
+                    var mapSystem = Resolve(shared.GetType("Robust.Shared.GameObjects.IEntitySystemManager", true)!);
+                    var system = mapSystem.GetType().GetMethod("GetEntitySystem", [typeof(Type)])!
+                        .Invoke(mapSystem, [shared.GetType("Robust.Shared.GameObjects.SharedMapSystem", true)!])!;
+                    var create = system.GetType().GetMethods().Single(m => m.Name == "CreateMap" && m.GetParameters().Length == 2 && m.GetParameters()[0].ParameterType.IsByRef);
+                    object?[] mapArguments = [null, false];
+                    create.Invoke(system, mapArguments);
+                    var eye = Activator.CreateInstance(client.GetType("Robust.Client.Graphics.FixedEye", true)!)!;
+                    var coordinatesType = shared.GetType("Robust.Shared.Map.MapCoordinates", true)!;
+                    eye.GetType().GetProperty("Position")!.SetValue(eye, Activator.CreateInstance(coordinatesType, [Vector2.Zero, mapArguments[0]]));
+                    eye.GetType().GetProperty("Zoom")!.SetValue(eye, Vector2.One);
+                    eye.GetType().GetProperty("DrawFov")!.SetValue(eye, false);
+                    eye.GetType().GetProperty("DrawLight")!.SetValue(eye, false);
+                    eyesType.GetProperty("CurrentEye")!.SetValue(eyes, eye);
+                    var stateRoot = Get(ui, "StateRoot")!;
+                    stateRoot.GetType().GetProperty("Visible")!.SetValue(stateRoot, false);
+                    var viewport = Get(ui, "MainViewport")!;
+                    Get(viewport, "Viewport")!.GetType().GetProperty("Eye")!.SetValue(Get(viewport, "Viewport"), eye);
+                    var viewportInterface = client.GetType("Robust.Client.UserInterface.CustomControls.IViewportControl", true)!;
+                    var clyde = Resolve(clydeType);
+                    var windowId = Get(Get(clyde, "MainWindow")!, "Id")!;
+                    var screenType = shared.GetType("Robust.Shared.Map.ScreenCoordinates", true)!;
+                    var fingerType = client.GetType("Robust.Client.Input.TouchFingerEventArgs", true)!;
+                    var actionType = client.GetType("Robust.Client.Input.TouchFingerAction", true)!;
+                    var emit = fingerType.GetProperty("EmitMouse", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                    var dispatcher = Delegate.CreateDelegate(emit.PropertyType, clyde,
+                        clyde.GetType().GetMethod("DispatchTouchMouse", BindingFlags.NonPublic | BindingFlags.Instance)!);
+                    void Touch(string action, long id, Vector2 position)
+                    {
+                        var args = Activator.CreateInstance(fingerType, [Enum.Parse(actionType, action), id,
+                            Activator.CreateInstance(screenType, [position, windowId])])!;
+                        emit.SetValue(args, dispatcher);
+                        ui.GetType().GetMethod("TouchFinger")!.Invoke(ui, [args]);
+                    }
+                    var transform = client.GetType("Robust.Client.UserInterface.Mobile.MobileCameraTransform", true)!;
+                    float Scale() => (float)transform.GetProperty("Magnification")!.GetValue(null)!;
+                    float Rotation() => (float)transform.GetProperty("Rotation")!.GetValue(null)!;
+                    var down = 0;
+                    var up = 0;
+                    var input = Resolve(client.GetType("Robust.Client.Input.IInputManager", true)!);
+                    var keyEvent = input.GetType().GetEvent("FirstChanceOnKeyEvent")!;
+                    var parameters = keyEvent.EventHandlerType!.GetMethod("Invoke")!.GetParameters()
+                        .Select(p => Expression.Parameter(p.ParameterType)).ToArray();
+                    Action<object, object> count = (key, type) =>
+                    {
+                        if (Get(key, "Key")?.ToString() != "MouseLeft") return;
+                        if (type.ToString() == "Down") down++;
+                        if (type.ToString() == "Up") up++;
+                    };
+                    var listener = Expression.Lambda(keyEvent.EventHandlerType,
+                        Expression.Invoke(Expression.Constant(count), parameters.Select(p => Expression.Convert(p, typeof(object)))), parameters).Compile();
+                    keyEvent.AddEventHandler(input, listener);
+                    var rootPixels = Get(Get(ui, "RootControl")!, "PixelSize")!;
+                    var width = Number(rootPixels, "X");
+                    var height = Number(rootPixels, "Y");
+                    var centre = new Vector2(width / 2, height * .30f);
+                    var first = centre - new Vector2(100, 0);
+                    var second = centre + new Vector2(100, 0);
+                    eyesType.GetProperty("MainViewport")!.SetValue(eyes, viewport);
+                    foreach (var p in new[] { first, second })
+                    {
+                        var hit = ui.GetType().GetMethod("MouseGetControl")!.Invoke(ui, [Activator.CreateInstance(screenType, [p, windowId])]);
+                        Console.WriteLine("CAMERA FIXTURE hit=" + hit?.GetType().FullName + " name=" + (hit == null ? "null" : Get(hit, "Name")) + " viewport=" + viewport.GetType().Name);
+                    }
+                    var originalPoint = (Vector2)viewportInterface.GetMethod("WorldToScreen")!.Invoke(viewport, [new Vector2(1, 0)])!;
+                    var originalOrigin = (Vector2)viewportInterface.GetMethod("WorldToScreen")!.Invoke(viewport, [Vector2.Zero])!;
+                    Touch("Down", 100, first);
+                    Touch("Down", 101, second);
+                    Touch("Motion", 101, first + new Vector2(400, 0));
+                    Assert(MathF.Abs(Scale() - 2) < .01f, "world pinch changes the real viewport magnification");
+                    var point = new Vector2(1, 0);
+                    var before = (Vector2)viewportInterface.GetMethod("WorldToScreen")!.Invoke(viewport, [point])!;
+                    Assert(MathF.Abs(Vector2.Distance(before, originalOrigin) / Vector2.Distance(originalPoint, originalOrigin) - 2) < .01f,
+                        "pinch magnifies the rendered world projection rather than the interface");
+                    Touch("Motion", 101, first + new Vector2(0, 400));
+                    Assert(MathF.Abs(Rotation() + MathF.PI / 2) < .01f, "clockwise touch rotation updates the effective eye");
+                    var after = (Vector2)viewportInterface.GetMethod("WorldToScreen")!.Invoke(viewport, [point])!;
+                    var origin = (Vector2)viewportInterface.GetMethod("WorldToScreen")!.Invoke(viewport, [Vector2.Zero])!;
+                    Assert(after.Y > origin.Y && MathF.Abs(after.X - origin.X) < 1,
+                        "render projection rotates landmarks in the same direction as fingers");
+                    var picked = viewportInterface.GetMethod("ScreenToMap")!.Invoke(viewport, [after])!;
+                    Assert(Vector2.Distance((Vector2)Get(picked, "Position")!, point) < .001f,
+                        "picking remains inverse to rendering after zoom and rotation");
+                    var bounds = eyesType.GetMethod("GetWorldViewbounds")!.Invoke(eyes, null);
+                    Assert(bounds != null && (Vector2)Get(eye, "Zoom")! == Vector2.One && Get(eye, "DrawFov") is false && Get(eye, "DrawLight") is false,
+                        "server eye zoom, FOV and light flags are retained");
+                    Touch("Up", 100, first);
+                    Touch("Up", 101, first + new Vector2(0, 400));
+                    Assert(down == 0 && up == 0, "camera gesture never clicks a world object");
+                    Touch("Down", 200, centre);
+                    Touch("Up", 200, centre);
+                    Assert(down == 1 && up == 1, "ordinary world tap still reaches original input exactly once");
+                    keyEvent.RemoveEventHandler(input, listener);
+                    transform.GetMethod("Apply")!.Invoke(null, [.01f, -MathF.PI / 2]);
+                    Assert(Scale() == 1 && MathF.Abs(Rotation()) < .001f, "pinch back restores the baseline view");
+                    eyesType.GetProperty("CurrentEye")!.SetValue(eyes, oldEye);
+                    stateRoot.GetType().GetProperty("Visible")!.SetValue(stateRoot, true);
+                    return true;
+                });
+            }
             if (Environment.GetEnvironmentVariable("SS14_CHECK_THUMBSTICK") == "1")
             {
                 await OnMain(() =>
