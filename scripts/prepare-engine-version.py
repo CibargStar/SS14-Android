@@ -20,7 +20,10 @@ repository = root / 'engine/RobustToolbox'
 destination = root / 'engine/versions' / args.version
 patches = [root / 'patches/engine-versions' / (args.version + '.patch'),
            root / 'patches/robust-android-platform.patch',
-           root / 'patches/engine-versions/288.1.2.patch']
+           root / 'patches/engine-versions/288.1.2.patch',
+           root / 'patches/engine-versions/283.1.5.patch',
+           root / 'patches/engine-versions/275.2.5.patch',
+           root / 'patches/engine-versions/264.0.15.patch']
 patches = [candidate for candidate in patches if candidate.exists()]
 
 def git(directory, *arguments, **options):
@@ -68,6 +71,13 @@ if 'public bool AltGr' not in events:
     if original.count(needle) != 2:
         raise SystemExit('Unrecognized legacy input API; manual port review is required.')
     input_path.write_text(original.replace(needle, ', args.RawCode)'))
+if 'RawCode' not in events:
+    input_path = destination / 'Robust.Client/Input/InputManager.cs'
+    original = input_path.read_text()
+    needle = ', args.RawCode)'
+    if original.count(needle) != 2:
+        raise SystemExit('Unrecognized oldest input API; manual port review is required.')
+    input_path.write_text(original.replace(needle, ')'))
 git(destination, 'add', '-N', '--', 'Robust.Client/Input/TouchFingerEventArgs.cs',
     'Robust.Client/UserInterface/Mobile')
 marker.write_text(json.dumps(state(), indent=2) + '\n')
