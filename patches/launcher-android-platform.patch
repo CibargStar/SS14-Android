@@ -1935,10 +1935,10 @@ index 47e6715..69bac78 100644
                Content="{loc:Loc server-entry-connect}"
                Command="{Binding ConnectCommand}" />
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-index 554bf08..6d5016e 100644
+index 554bf08..ed4329b 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-@@ -14,6 +14,51 @@ public partial class ServerEntryView : UserControl
+@@ -14,6 +14,52 @@ public partial class ServerEntryView : UserControl
      {
          InitializeComponent();
  
@@ -1975,6 +1975,7 @@ index 554bf08..6d5016e 100644
 +            (FavoriteButton.Parent as Panel)?.Children.Remove(FavoriteButton);
 +            FavoriteButtonIconLabel.Content = null;
 +            FavoriteButton.Classes.Add("mobile");
++            FavoriteButton.Classes.Add("OpenBoth");
 +            FavoriteButtonIconLabel.Bind(IconLabel.IconProperty, new Avalonia.Data.Binding("IsFavorite")
 +            {
 +                Converter = new Avalonia.Data.Converters.FuncValueConverter<bool, Avalonia.Media.IImage>(favorite =>

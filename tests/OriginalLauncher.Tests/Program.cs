@@ -174,6 +174,10 @@ foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(10
     var favoriteIcon = firstRow.FindControl<IconLabel>("FavoriteButtonIconLabel")!;
     var originalIcon = favoriteIcon.Icon;
     Assert(originalIcon != null, "quick favorite displays the upstream star asset");
+    var renderedStar = favoriteAction.GetVisualDescendants().OfType<Image>().Single();
+    var starOrigin = renderedStar.TranslatePoint(default, favoriteAction)!.Value;
+    Assert(renderedStar.Bounds.Width >= 18 && starOrigin.X >= 0 && starOrigin.X + renderedStar.Bounds.Width <= favoriteAction.Bounds.Width + 1,
+        "star fits inside the compact original button skin");
     var wasFavorite = serverModel.IsFavorite;
     var wasExpanded = serverModel.IsExpanded;
     var favoritePoint = favoriteAction.TranslatePoint(new Point(favoriteAction.Bounds.Width / 2, favoriteAction.Bounds.Height / 2), host)!.Value;
