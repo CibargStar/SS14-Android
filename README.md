@@ -11,7 +11,7 @@
 
 ## Скачать
 
-[**0.8.1-dev · APK и описание релиза**](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.8.1-dev) · [Установка и управление](docs/install.md) · [Изменения](CHANGELOG.md)
+[**0.9.0-dev · APK и описание релиза**](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.9.0-dev) · [Установка и управление](docs/install.md) · [Изменения](CHANGELOG.md)
 
 Для ARM64-устройств выбирайте `arm64-coreclr.apk`; для x86-64 — `x64-coreclr.apk`. Движок и контент сервера загружаются приложением. Отдельные игровые файлы и локальный сервер не нужны.
 
