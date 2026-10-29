@@ -1,6 +1,6 @@
 # Сборка из исходников
 
-Проверяемая среда — Linux и GitHub Actions Ubuntu. Версии инструментов и команды CI: [.github/workflows/android-client.yml](../.github/workflows/android-client.yml).
+Собираю порт на Linux; CI использует GitHub Actions Ubuntu. Версии инструментов и команды: [.github/workflows/android-client.yml](../.github/workflows/android-client.yml).
 
 ## Инструменты
 
@@ -8,7 +8,7 @@
 - JDK 21, Android SDK platform/build-tools 36.
 - Android NDK r27c, **27.2.12479018**. Не выбирайте автоматически самый новый NDK.
 - Git, Python 3, OpenSSL, CMake, Ninja, make, curl, unzip и autotools для libsodium.
-- Место для submodule, native-сборок, NuGet и APK; рабочая среда проекта использует около 30 ГБ.
+- Около 30 ГБ для исходников, native-сборок, NuGet и APK.
 
 ```bash
 git clone --recurse-submodules https://github.com/CibargStar/SS14-Android.git
@@ -32,9 +32,9 @@ bash scripts/build-native-sodium.sh
 bash scripts/build-engine.sh
 ```
 
-Скрипты закрепляют исходники native-зависимостей и применяют патч к закреплённому RobustToolbox. Повторный запуск распознаёт уже применённый патч; посторонние изменения submodule не сбрасываются автоматически.
+Скрипты используют закреплённые native-исходники и патч RobustToolbox. Повторный запуск распознаёт применённый патч; посторонние изменения submodule сохраняются.
 
-Для локальной development-сборки создайте **собственный** ключ в новом файле. Не заменяйте существующий ключ и не добавляйте приватные ключи в Git.
+Для локальной сборки создайте собственный Ed25519-ключ в новом файле. Приватный ключ в Git не добавляется.
 
 ```bash
 mkdir -p .keys
@@ -42,27 +42,34 @@ chmod 700 .keys
 test ! -e .keys/local-engine.pem && \
   openssl genpkey -algorithm ED25519 -out .keys/local-engine.pem
 chmod 600 .keys/local-engine.pem
-python3 scripts/package-android-engine.py   --key .keys/local-engine.pem --version 294.0.1
+python3 scripts/package-android-engine.py --key .keys/local-engine.pem --version 294.0.1
 ```
 
-Пакет, подпись, публичный ключ и bundled-manifest появляются в `artifacts/engines`. Такой ключ принадлежит только вашей сборке. Для официального тестового канала нужен отдельный процесс [публикации](releasing.md).
+Пакет, подпись, публичный ключ и bundled-manifest появятся в `artifacts/engines`. Этот ключ используется только вашей сборкой; ключ релизного канала описан в [публикации](releasing.md).
 
 ## APK
 
 ```bash
-bash scripts/build-original-launcher.sh   -p:AndroidSdkDirectory="$ANDROID_HOME"   -p:JavaSdkDirectory="$JAVA_HOME"   -p:RuntimeIdentifier=android-arm64   -p:UseMonoRuntime=false
+bash scripts/build-original-launcher.sh \
+  -p:AndroidSdkDirectory="$ANDROID_HOME" \
+  -p:JavaSdkDirectory="$JAVA_HOME" \
+  -p:RuntimeIdentifier=android-arm64 -p:UseMonoRuntime=false
 ```
 
-Результат: `src/SS14.Android/bin/Debug/net10.0-android/android-arm64/*-Signed.apk`. Скрипт передаёт глобальное `AndroidLauncher=true`, одинаковое для restore и compilation зависимых проектов.
+Результат: `src/SS14.Android/bin/Debug/net10.0-android/android-arm64/*-Signed.apk`. Скрипт передаёт `AndroidLauncher=true` для restore и сборки зависимых проектов.
 
-Публикуемые тестовые APK используют экспериментальный CoreCLR .NET 10. Mono остаётся диагностическим вариантом (`UseMonoRuntime=true`). AOT, interpreter и trimming отключены: клиент загружает DLL выбранного сервера и генерирует код во время выполнения.
+Релизные APK используют экспериментальный CoreCLR .NET 10; `UseMonoRuntime=true` включает диагностический Mono. AOT, interpreter и trimming отключены для загрузки серверных DLL и генерации кода во время выполнения.
 
 ## Другая точная версия движка
 
 ```bash
 python3 scripts/prepare-engine-version.py 294.0.0
-dotnet build engine/versions/294.0.0/Robust.Client/Robust.Client.csproj   -c Release -p:FullRelease=True -p:TargetOS=Android -m:1 -p:BuildInParallel=false
-python3 scripts/package-android-engine.py   --engine engine/versions/294.0.0 --version 294.0.0   --key .keys/local-engine.pem
+dotnet build engine/versions/294.0.0/Robust.Client/Robust.Client.csproj \
+  -c Release -p:FullRelease=True -p:TargetOS=Android \
+  -m:1 -p:BuildInParallel=false
+python3 scripts/package-android-engine.py \
+  --engine engine/versions/294.0.0 --version 294.0.0 \
+  --key .keys/local-engine.pem
 ```
 
-Скрипт получает именно upstream tag этой версии и выбирает применимый проверенный патч. Отсутствие подходящего патча — причина для ручного портирования, а не подмены версии. Подготовленное дерево защищено маркером от незамеченного изменения патча.
+Подготовка использует точный upstream tag и проверенный патч. Если подходящего патча нет, версию нужно портировать. Маркер подготовленного дерева обнаруживает изменение патча.

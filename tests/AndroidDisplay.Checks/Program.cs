@@ -30,7 +30,7 @@ foreach (var (width, height) in resolutions)
 var fhd = MobileDisplaySizing.UiScale(2340, 1080, 0);
 var qhd = MobileDisplaySizing.UiScale(3120, 1440, 0);
 Check(MathF.Abs(2340 / fhd - 3120 / qhd) < 0.01f && MathF.Abs(1080 / fhd - 1440 / qhd) < 0.01f,
-    "S25 Ultra FHD+ and QHD+ produce the same logical interface layout");
+    "FHD+ and QHD+ produce the same logical interface layout");
 var root = Path.Combine(Path.GetTempPath(), "ss14-display-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try

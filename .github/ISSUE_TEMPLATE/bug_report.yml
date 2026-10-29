@@ -5,14 +5,14 @@ body:
     id: version
     attributes:
       label: Версия APK
-      placeholder: 0.6.0-dev, arm64-coreclr
+      placeholder: 0.8.1-dev, arm64-coreclr
     validations:
       required: true
   - type: input
     id: device
     attributes:
       label: Устройство и Android
-      placeholder: Samsung S25 Ultra, Android …
+      placeholder: Модель устройства, версия Android
     validations:
       required: true
   - type: input

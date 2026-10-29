@@ -1,18 +1,18 @@
 # Публикация тестового релиза
 
-Релиз состоит из исходников, подписанных движков, подписанного APK и каталога обновлений. APK и native-библиотеки не хранятся в main. Приватные ключи не передаются в Git или Actions.
+Релизы публикую в GitHub Releases, каталоги — в ветке `updates`. Движки подписываются постоянным Ed25519-ключом, APK — прежним сертификатом. Приватные ключи хранятся вне Git и Actions.
 
 ## 1. Зафиксировать исходники
 
-Обновите version code/display version, патчи, CHANGELOG и результаты проверок. Проверьте чистое применение патчей. Зафиксируйте source SHA каждого запуска CI. Сборка без ошибок не заменяет тест настоящего клиента. Перед публикацией изменений ввода обязателен `OriginalClient.VisualCheck` с `SS14_CHECK_INPUT=1`, `SS14_CHECK_CAMERA=1` `SS14_CHECK_THUMBSTICK=1` и `SS14_CHECK_HUD=1` (с `ROBUST_ANDROID_MOBILE_UI=true`) на окончательном подписанном пакете: события должны пройти native SDL, без прямого вызова UI-обработчиков.
+Обновите version code/display version, патчи, CHANGELOG и результаты проверок. Проверьте патчи на чистом upstream и сохраните source SHA запусков CI. Для изменений ввода обязателен [OriginalClient.VisualCheck](testing.md) на окончательном подписанном пакете: `SS14_CHECK_INPUT=1`, `SS14_CHECK_CAMERA=1`, `SS14_CHECK_THUMBSTICK=1`, `SS14_CHECK_HUD=1`, `ROBUST_ANDROID_MOBILE_UI=true`. События должны проходить native SDL.
 
 Запустите `engine-versions.yml` с CSV точных версий, а `android-client.yml` — для `android-arm64` и `android-x64`, `runtime=coreclr`, `engine_channel=published` и новым `version_code`.
 
-Host и движки можно собирать параллельно: перед подписью APK его engine assets заменяются окончательными пакетами. Не выпускайте новый host со старыми движками случайно.
+Host и движки можно собирать параллельно; перед подписью APK замените его engine assets окончательными пакетами.
 
 ## 2. Проверить и подписать движки
 
-Для каждого артефакта Actions сохраните ID, SHA-256, source SHA и точный upstream tag. Получите commit тега независимо из официального RobustToolbox. Импорт выполняйте последовательно в общий output:
+Для каждого артефакта сохраните ID, SHA-256, source SHA и upstream tag. Commit тега сверьте с официальным RobustToolbox. Импортируйте последовательно в общий output:
 
 ```bash
 python3 scripts/import-engine-artifact.py downloaded-artifact.zip \
@@ -21,7 +21,7 @@ python3 scripts/import-engine-artifact.py downloaded-artifact.zip \
   --key /private/channel-key.pem --output artifacts/release-engines
 ```
 
-Скрипт проверяет хеш артефакта, временную CI-подпись, хеш пакета и provenance, затем подписывает пакет постоянным ключом. Его публичная часть должна совпадать с `updates/android-engine-public.pub`.
+Импорт проверяет хеши, временную CI-подпись и provenance, затем подписывает пакет постоянным ключом. Публичная часть должна совпадать с `updates/android-engine-public.pub`.
 
 Опционально создайте дельту для известного официального ZIP:
 
@@ -32,7 +32,7 @@ python3 scripts/create-engine-patch.py --source official.zip \
   --key /private/channel-key.pem
 ```
 
-Проверьте дельту через `tests/EnginePatch.Checks`. Нельзя объявлять дельту совместимой с другим исходным ZIP.
+Проверьте дельту через `tests/EnginePatch.Checks`: она подходит только к указанному исходному ZIP.
 
 ## 3. Опубликовать движки
 
@@ -68,7 +68,7 @@ apksigner verify --print-certs-pem signed.apk
 
 Workflow `publish-test-host.yml` читает временную ветку `host-staging`. В ней находятся `notes.md`, APK-части до 40 МиБ и `apks.json`: массив объектов `{name, sha256, chunks: [{name, sha256}]}`. Workflow восстанавливает APK и проверяет хеш, сертификат и закреплённый ключ движка перед публикацией.
 
-Для большого staging через ограничивающий proxy загружайте небольшие группы blob во временные orphan-ветки; затем создавайте общий tree/commit через Git Data API из уже загруженных blob. Это транспортный обход, байты APK не меняются.
+Если proxy ограничивает размер push, загрузите blob группами во временные orphan-ветки и соберите общий tree/commit через Git Data API.
 
 Запустите workflow с новым `android-host-*` тегом. После сверки опубликованных digest/размеров обновите `engines.json` и `apk-android-{arm64,x64}.json` в ветке `updates`; прочитайте их обратно по raw HTTPS. APK descriptor содержит `applicationId`, `versionCode`, `url`, `sha256`, `minSdk`.
 
