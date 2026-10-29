@@ -26,3 +26,5 @@ HUD-стенд использует настоящий DefaultGameScreen. Доп
 Предыдущие проверки Android-эмулятора подтверждали исходное главное меню, 3200 RSI, 918 текстур и transport/serializer handshake с внутренним сервером 294.0.1. Они не заменяют запуск нового APK и полный игровой раунд.
 
 Команды: [testing.md](testing.md). Установка и проверка на устройстве: [install.md](install.md). Известные ограничения: [compatibility.md](compatibility.md).
+
+[Релиз 0.8.1-dev](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.8.1-dev): [публикация движков](https://github.com/CibargStar/SS14-Android/actions/runs/40865399990), [публикация APK](https://github.com/CibargStar/SS14-Android/actions/runs/40865404737). SHA-256 и размеры опубликованных пакетов/подписей движков, обоих APK и файлов SHA256SUMS совпадают с локальными подписанными файлами.
