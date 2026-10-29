@@ -2077,7 +2077,7 @@ index 0000000..d95f951
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileProfileLayout.cs b/Robust.Client/UserInterface/Mobile/MobileProfileLayout.cs
 new file mode 100644
-index 0000000..679407f
+index 0000000..e6208c0
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileProfileLayout.cs
 @@ -0,0 +1,230 @@
@@ -2279,7 +2279,7 @@ index 0000000..679407f
 +        var previewWidth = Math.Clamp(available.X * 0.22f, 110, 220);
 +        var bodyWidth = MathF.Max(0, available.X - previewWidth - 12);
 +        var body = new Vector2(bodyWidth, MathF.Max(0, available.Y - 100));
-+        var maxSprite = new Vector2(MathF.Max(1, previewWidth - 20), MathF.Max(1, available.Y - 75));
++        var maxSprite = new Vector2(MathF.Max(1, previewWidth - 20), MathF.Max(1, available.Y - 120));
 +        if (_sprite.MaxSize != maxSprite) _sprite.MaxSize = maxSprite;
 +        Sections.Measure(new Vector2(bodyWidth, 44));
 +        Identity.Measure(body); Content.Measure(body); Colors.Measure(body); Randomizer.Measure(body); Files.Measure(body);

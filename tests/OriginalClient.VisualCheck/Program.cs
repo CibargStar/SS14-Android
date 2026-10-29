@@ -778,6 +778,17 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                         Inside(profilePanel, "bounded profile form");
                         Inside(FindLayout("MobileProfilePreview"), "persistent character preview");
                         Inside(FindLayout("MobileProfileFooter"), "persistent save/reset actions");
+                        var preview = FindLayout("MobileProfilePreview");
+                        var previewTop = Vector(Get(preview, "GlobalPixelPosition")!);
+                        var previewSize = Vector(Get(preview, "PixelSize")!);
+                        foreach (var rotation in new[] { "SpriteRotateLeft", "SpriteRotateRight" })
+                        {
+                            var button = FindLayout(rotation);
+                            var position = Vector(Get(button, "GlobalPixelPosition")!);
+                            var extent = Vector(Get(button, "PixelSize")!);
+                            LayoutCheck(position.Y >= previewTop.Y && position.Y + extent.Y <= previewTop.Y + previewSize.Y + 1,
+                                "preview rotation stays inside its card above save/reset at every scale");
+                        }
                         LayoutCheck(!Descendants(FindLayout("MobileCharacterEditor")).Any(c =>
                             c.GetType().Name == "ScrollContainer" && ReferenceEquals(Get(c, "Parent"), FindLayout("MobileCharacterEditor"))),
                             "editor has no outer scrolling desktop canvas");
