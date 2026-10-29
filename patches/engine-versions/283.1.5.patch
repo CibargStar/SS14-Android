@@ -1434,7 +1434,7 @@ index 0000000..1d00f75
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
 new file mode 100644
-index 0000000..3c5e00b
+index 0000000..bfeba33
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
 @@ -0,0 +1,134 @@
@@ -1566,7 +1566,7 @@ index 0000000..3c5e00b
 +        _settingsButton.Measure(new Vector2(44, 36));
 +        _settingsButton.Arrange(UIBox2.FromDimensions(new Vector2(MathF.Max(0, (finalSize.X - 44) / 2), 8), new Vector2(44, 36)));
 +        _thumbstick.DefaultPosition = position;
-+        _thumbstick.SetSize = size;
++        if (_thumbstick.SetSize != size) _thumbstick.SetSize = size;
 +        _thumbstick.Measure(size);
 +        _thumbstick.Arrange(UIBox2.FromDimensions(position, size));
 +        return finalSize;
@@ -3598,10 +3598,10 @@ index 0000000..cd7fce1
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs b/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs
 new file mode 100644
-index 0000000..2cf9d55
+index 0000000..710f6f2
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,405 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Linq;
@@ -3711,9 +3711,9 @@ index 0000000..2cf9d55
 +    {
 +        var available = _window.Parent?.Size ?? viewport;
 +        var size = Vector2.Max(new Vector2(1), available - new Vector2(16));
-+        _window.MaxSize = size;
-+        _window.SetSize = size;
-+        LayoutContainer.SetPosition(_window, new Vector2(8));
++        if (_window.MaxSize != size) _window.MaxSize = size;
++        if (_window.SetSize != size) _window.SetSize = size;
++        if (_window.Position != new Vector2(8)) LayoutContainer.SetPosition(_window, new Vector2(8));
 +    }
 +
 +    public bool OwnsScroll(ScrollContainer scroll)
@@ -3903,8 +3903,10 @@ index 0000000..2cf9d55
 +        _tabs.Measure(new Vector2(available.X, 44));
 +        var right = wide && ServerScroll.Visible ? Math.Clamp(available.X * 0.36f, 300, 460) : 0;
 +        var top = wide ? 0 : 48;
-+        if (Actions != null) Actions.Columns = (wide ? right : available.X) >= 420 ? 2 : 1;
-+        Lobby.MinHeight = MathF.Max(0, available.Y - top);
++        var columns = (wide ? right : available.X) >= 420 ? 2 : 1;
++        if (Actions != null && Actions.Columns != columns) Actions.Columns = columns;
++        var minimumHeight = MathF.Max(0, available.Y - top);
++        if (Lobby.MinHeight != minimumHeight) Lobby.MinHeight = minimumHeight;
 +        LobbyScroll.Measure(new Vector2(available.X - (right > 0 ? right + 8 : 0), MathF.Max(0, available.Y - top)));
 +        ServerScroll.Measure(new Vector2(wide ? right : available.X, MathF.Max(0, available.Y - MathF.Max(top, ChatHeight + 8))));
 +        return Vector2.Zero;

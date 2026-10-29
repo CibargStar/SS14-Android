@@ -657,6 +657,10 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     LayoutCheck(Descendants(FindLayout("MobileGuidebookPanel")).Contains(tree!) && Descendants(FindLayout("MobileGuidebookPanel")).Contains(article!),
                         "guide keeps the original tree, document and ancestor link handlers");
                     LayoutCheck(Descendants(Descendants(guide!).Single(c => Get(c, "Name")?.ToString() == "EntryContainer")).Count() > 5, "original guide document is parsed and displayed");
+                    var adapter = Descendants(Get(ui, "RootControl")!).Single(c => c.GetType().Name == "MobileServerUiAdapter");
+                    LayoutCheck(Get(guide!, "IsMeasureValid") is true, "guide layout settles after rendering");
+                    adapter.GetType().GetMethod("Update")!.Invoke(adapter, [0f]);
+                    LayoutCheck(Get(guide!, "IsMeasureValid") is true, "idle adapter update does not invalidate guide measurement");
                     return true;
                 });
                 await Capture("mobile-guide-wide");
