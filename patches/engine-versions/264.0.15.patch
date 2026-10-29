@@ -4426,8 +4426,7 @@ index c6b911a..0731419 100644
 -            var headerSize = _enclosingTabHeight;
 +            var headerSize = TabsVisible ? _enclosingTabHeight : 0;
              var panel = _getPanel();
-@@ -297,3 +297,3 @@ namespace Robust.Client.UserInterface.Controls
- 
+@@ -298,2 +298,2 @@ namespace Robust.Client.UserInterface.Controls
 -            var headerSize = (int)_enclosingTabHeight;
 +            var headerSize = TabsVisible ? (int)_enclosingTabHeight : 0;
              var panel = _getPanel();
