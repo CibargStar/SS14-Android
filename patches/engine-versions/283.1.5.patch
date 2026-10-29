@@ -2887,10 +2887,10 @@ index 0000000..065de5c
 +mobile-menu-toggle = Свернуть / развернуть меню
 diff --git a/Robust.Client/UserInterface/Mobile/MobileChatDock.cs b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
 new file mode 100644
-index 0000000..39e9837
+index 0000000..f63f3f6
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,88 @@
 +using System;
 +using System.Numerics;
 +using Robust.Client.Graphics;
@@ -2908,6 +2908,7 @@ index 0000000..39e9837
 +    private readonly MobileHudIconButton _expand;
 +    private readonly MobileHudIconButton _hide;
 +    private readonly Label _title;
++    public event Action? LayoutChanged;
 +    public bool Expanded { get; private set; }
 +    public bool Collapsed { get; private set; }
 +
@@ -2961,6 +2962,7 @@ index 0000000..39e9837
 +        InvalidateMeasure();
 +        Parent?.InvalidateMeasure();
 +        Parent?.InvalidateArrange();
++        LayoutChanged?.Invoke();
 +    }
 +
 +    protected override void Dispose(bool disposing)
@@ -3096,10 +3098,10 @@ index 0000000..d95f951
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
 new file mode 100644
-index 0000000..8851c07
+index 0000000..72eed76
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
-@@ -0,0 +1,296 @@
+@@ -0,0 +1,334 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Linq;
@@ -3109,6 +3111,7 @@ index 0000000..8851c07
 +using Robust.Client.UserInterface.Controls;
 +using Robust.Shared.Localization;
 +using Robust.Shared.Maths;
++using Robust.Shared.Map;
 +
 +namespace Robust.Client.UserInterface.Mobile;
 +
@@ -3122,7 +3125,7 @@ index 0000000..8851c07
 +    private readonly List<MenuBinding> _menus = new();
 +    private float _scanIn;
 +    private int _layoutStamp;
-+    private readonly Dictionary<long, (OutputPanel Output, float Start, float Last, bool Dragging)> _scrolls = new();
++    private readonly Dictionary<long, (OutputPanel Output, Vector2 Start, float Last, bool Dragging)> _scrolls = new();
 +
 +    public MobileServerUiAdapter(Control screenRoot, Control stateRoot)
 +    {
@@ -3180,8 +3183,8 @@ index 0000000..8851c07
 +        }
 +        foreach (var chat in _chats)
 +        {
-+            chat.Source.Visible = false;
-+            chat.Dock.Visible = AncestorsVisible(chat.Source.Parent);
++            chat.Source.Visible = !chat.Dock.Collapsed;
++            chat.Dock.Visible = AncestorsVisible(chat.OriginalParent);
 +        }
 +        foreach (var menu in _menus) menu.Enforce();
 +        var layout = new HashCode();
@@ -3213,9 +3216,9 @@ index 0000000..8851c07
 +        // Require the original channel/filter controls; never replace an
 +        // unrelated text field or bypass server permission/channel handling.
 +        if (!controls.Any(c => c.Name == "ChannelSelector") || !controls.Any(c => c.Name == "FilterButton")) return;
-+        var binding = new ChatBinding(source, panel, input, output);
++        var binding = new ChatBinding(source, input, output);
 +        _chats.Add(binding);
-+        AddChild(binding.Dock);
++        binding.Dock.LayoutChanged += () => { InvalidateMeasure(); InvalidateArrange(); };
 +        InvalidateMeasure();
 +    }
 +
@@ -3236,8 +3239,8 @@ index 0000000..8851c07
 +            for (var control = hit; control != null; control = control.Parent)
 +            {
 +                if (control is not OutputPanel output || !_chats.Any(c => c.Output == output)) continue;
-+                _scrolls[id] = (output, y, y, false);
-+                break;
++                _scrolls[id] = (output, args.Coordinates.Position, y, false);
++                return true;
 +            }
 +            return false;
 +        }
@@ -3245,16 +3248,29 @@ index 0000000..8851c07
 +        if (args.Action != TouchFingerAction.Motion || !state.Output.VisibleInTree)
 +        {
 +            _scrolls.Remove(id);
-+            return state.Dragging;
++            if (!state.Dragging && args.Action == TouchFingerAction.Up && state.Output.VisibleInTree)
++            {
++                // Chat links activate on mouse-down. Delay the entire click
++                // until a real tap is known; a history swipe must never fire it.
++                var inOutput = false;
++                for (var control = hit; control != null; control = control.Parent) inOutput |= control == state.Output;
++                if (inOutput && args.EmitMouse is { } emit)
++                {
++                    emit(TouchMouseAction.Move, args.Coordinates);
++                    emit(TouchMouseAction.Down, args.Coordinates);
++                    emit(TouchMouseAction.Up, args.Coordinates);
++                }
++            }
++            return true;
 +        }
-+        var dragging = state.Dragging || MathF.Abs(y - state.Start) >= 10 * UIScale;
++        var dragging = state.Dragging || Vector2.Distance(args.Coordinates.Position, state.Start) >= 10 * UIScale;
 +        if (dragging)
 +        {
 +            if (!state.Dragging) cancelClick(id);
-+            state.Output.ScrollByDelta(y - (state.Dragging ? state.Last : state.Start));
++            state.Output.ScrollByDelta(y - (state.Dragging ? state.Last : state.Start.Y));
 +        }
 +        _scrolls[id] = (state.Output, state.Start, y, dragging);
-+        return dragging;
++        return true;
 +    }
 +
 +    protected override Vector2 MeasureOverride(Vector2 availableSize)
@@ -3272,11 +3288,17 @@ index 0000000..8851c07
 +            var left = 12f;
 +            var right = finalSize.X - 12;
 +            foreach (var menu in _menus)
-+                if (menu.Source.VisibleInTree && menu.Source.GlobalPosition.Y < top + desired.Y)
++                if (menu.Source.VisibleInTree && menu.Source.GlobalPosition.X < finalSize.X / 2 && menu.Source.GlobalPosition.Y < top + desired.Y)
 +                    left = MathF.Max(left, menu.Source.GlobalPosition.X + menu.Source.Size.X + 12);
 +            var size = chat.Dock.DockSize(finalSize, MathF.Max(42, right - left));
 +            chat.Dock.Measure(size);
-+            chat.Dock.Arrange(UIBox2.FromDimensions(new Vector2(MathF.Max(left, right - size.X), top), size));
++            var global = new Vector2(MathF.Max(left, right - size.X), top);
++            var position = global - (chat.Dock.Parent?.GlobalPosition ?? Vector2.Zero);
++            LayoutContainer.SetMarginLeft(chat.Dock, position.X);
++            LayoutContainer.SetMarginTop(chat.Dock, position.Y);
++            LayoutContainer.SetMarginRight(chat.Dock, position.X + size.X);
++            LayoutContainer.SetMarginBottom(chat.Dock, position.Y + size.Y);
++            chat.Dock.Arrange(UIBox2.FromDimensions(position, size));
 +            top += size.Y + 6;
 +        }
 +        return finalSize;
@@ -3298,49 +3320,67 @@ index 0000000..8851c07
 +        public readonly Control Source;
 +        public readonly MobileChatDock Dock;
 +        public readonly OutputPanel Output;
-+        private readonly Control _panel;
-+        private readonly Control _originalParent;
++        public readonly Control OriginalParent;
++        private readonly UIScreen? _screen;
 +        private readonly int _index;
 +        private readonly bool _visible;
-+        private readonly bool _panelVisible;
++        private readonly Vector2 _minimum;
++        private readonly Vector2 _setSize;
++        private readonly Vector2 _maximum;
++        private readonly (AttachedProperty Property, float Value)[] _margins;
 +        private readonly LineEdit _input;
 +        private readonly string? _placeholder;
 +        private readonly Vector2 _inputMin;
 +        private readonly MobileHudIconButton _send;
 +
-+        public ChatBinding(Control source, Control panel, LineEdit input, OutputPanel output)
++        public ChatBinding(Control source, LineEdit input, OutputPanel output)
 +        {
-+            Source = source; Output = output; _panel = panel; _input = input;
-+            _originalParent = panel.Parent!; _index = panel.GetPositionInParent(); _visible = source.Visible; _panelVisible = panel.Visible;
++            Source = source; Output = output; _input = input;
++            OriginalParent = source.Parent!; _index = source.GetPositionInParent(); _visible = source.Visible;
++            _minimum = source.MinSize; _setSize = source.SetSize; _maximum = source.MaxSize;
++            _margins = new[] { LayoutContainer.MarginLeftProperty, LayoutContainer.MarginTopProperty,
++                LayoutContainer.MarginRightProperty, LayoutContainer.MarginBottomProperty }
++                .Select(property => (property, source.GetValue<float>(property))).ToArray();
 +            _placeholder = input.PlaceHolder; _inputMin = input.MinSize;
-+            _originalParent.RemoveChild(panel);
-+            Dock = new MobileChatDock(panel, input);
++            for (var parent = source.Parent; parent != null; parent = parent.Parent)
++                if (parent is UIScreen screen) { _screen = screen; break; }
++            // Public upstream registration API handles nested/separated layouts.
++            if (_screen != null && source is UIWidget && _screen[source.GetType()] == source)
++                typeof(UIScreen).GetMethod(nameof(UIScreen.RemoveWidget))!.MakeGenericMethod(source.GetType()).Invoke(_screen, null);
++            source.Parent?.RemoveChild(source);
++            source.MinSize = Vector2.Zero; source.SetSize = new Vector2(float.NaN); source.MaxSize = new Vector2(float.PositiveInfinity);
++            Dock = new MobileChatDock(source, input);
++            var parentControl = (Control?) _screen ?? OriginalParent;
++            parentControl.AddChild(Dock);
++            LayoutContainer.SetAnchorPreset(Dock, LayoutContainer.LayoutPreset.TopLeft);
 +            input.PlaceHolder = Loc.GetString("mobile-chat-placeholder");
 +            input.MinHeight = MathF.Max(38, input.MinHeight);
 +            _send = new MobileHudIconButton(MobileHudIconButton.Symbol.Send, "MobileChatSend", Loc.GetString("mobile-chat-send"));
-+            // Same entry point as Enter/IME: history, selected channel, typing
-+            // indicator, validation and the server's SendMessage stay intact.
 +            _send.OnPressed += _ => input.ForceSubmitText();
 +            input.Parent!.AddChild(_send);
-+            source.Visible = false;
 +        }
 +
 +        public void Restore()
 +        {
 +            _send.Dispose();
 +            if (!_input.Disposed) { _input.PlaceHolder = _placeholder; _input.MinSize = _inputMin; }
-+            if (!_panel.Disposed)
++            // Detach the dock with the source inside so UIScreen unregisters
++            // its widgets before they are put back at their original location.
++            Dock.Parent?.RemoveChild(Dock);
++            if (!Source.Disposed)
 +            {
-+                _panel.Parent?.RemoveChild(_panel);
-+                _panel.Visible = _panelVisible;
-+                if (!_originalParent.Disposed)
++                Source.Parent?.RemoveChild(Source);
++                Source.MinSize = _minimum; Source.SetSize = _setSize; Source.MaxSize = _maximum; Source.Visible = _visible;
++                foreach (var item in _margins) Source.SetValue(item.Property, item.Value);
++                if (!OriginalParent.Disposed)
 +                {
-+                    _originalParent.AddChild(_panel);
-+                    _panel.SetPositionInParent(Math.Min(_index, _originalParent.ChildCount - 1));
++                    OriginalParent.AddChild(Source);
++                    Source.SetPositionInParent(Math.Min(_index, OriginalParent.ChildCount - 1));
++                    if (_screen != null && !_screen.Disposed && Source is UIWidget widget && _screen[Source.GetType()] == null)
++                        _screen.AddWidgetDirect(widget);
 +                }
-+                else _panel.Dispose();
++                else Source.Dispose();
 +            }
-+            if (!Source.Disposed) Source.Visible = _visible;
 +            Dock.Dispose();
 +        }
 +    }

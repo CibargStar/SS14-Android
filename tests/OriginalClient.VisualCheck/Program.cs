@@ -382,9 +382,13 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 await Task.Delay(1000);
                 await OnMain(() =>
                 {
-                    HudCheck(Get(originalChat!, "Visible") is false && ReferenceEquals(Get(originalChat!, "ChatWindowPanel"), originalPanel), "server chat is replaced using its original panel instance");
+                    HudCheck(ReferenceEquals(Get(originalChat!, "ChatWindowPanel"), originalPanel) && Descendants(HudFind("MobileChatDock")).Contains(originalChat!), "server chat is adapted using its original ChatBox instance");
                     HudCheck(Descendants(HudFind("MobileChatDock")).Contains(originalPanel!), "original messages, channels and filters are mounted in mobile dock");
                     HudCheck(ReferenceEquals(Get(originalScreen!, "ChatBox"), originalChat), "original screen/controller ChatBox lookup is retained");
+                    var lookup = originalScreen!.GetType().GetMethod("GetWidget")!.MakeGenericMethod(originalChat!.GetType()).Invoke(originalScreen, null);
+                    HudCheck(ReferenceEquals(lookup, originalChat), "upstream widget registry retains reparented original chat");
+                    var ancestor = Get(originalPanel!, "Parent");
+                    HudCheck(ReferenceEquals(ancestor, originalChat), "chat links retain the original ChatBox ancestor and entity click handler");
                     var labels = Descendants(firstButton!).Where(c => c.GetType().Name == "Label").ToArray();
                     HudCheck(labels.Length > 0 && labels.All(c => Get(c, "Visible") is false), "menu keeps original icons and hides all keyboard legends");
                     HudCheck(Descendants(originalBar!).Contains(firstButton!), "menu retains the original action button instance");
@@ -422,9 +426,19 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     var output = Descendants(originalPanel!).Single(c => c.GetType().Name == "OutputPanel");
                     var scrollbar = Descendants(output).Single(c => c.GetType().Name == "VScrollBar");
                     var before = Number(scrollbar, "Value");
+                    var historyClicks = 0;
+                    var clickEvent = output.GetType().GetEvent("OnKeyBindDown")!;
+                    var clickArgument = Expression.Parameter(clickEvent.EventHandlerType!.GenericTypeArguments[0]);
+                    Action<object> countClick = value => { if (Get(value, "Function")?.ToString() == "UIClick") historyClicks++; };
+                    var clickListener = Expression.Lambda(clickEvent.EventHandlerType, Expression.Invoke(Expression.Constant(countClick), Expression.Convert(clickArgument, typeof(object))), clickArgument).Compile();
+                    clickEvent.AddEventHandler(output, clickListener);
                     var point = Vector(Get(output, "GlobalPixelPosition")!) + Vector(Get(output, "PixelSize")!) / 2;
                     RawTouch("Down", 980, point); RawTouch("Motion", 980, point + new Vector2(0, 90)); RawTouch("Up", 980, point + new Vector2(0, 90));
                     HudCheck(Number(scrollbar, "Value") < before, "one-finger swipe scrolls original chat history");
+                    HudCheck(historyClicks == 0, "chat history swipe never emits a message/link click");
+                    RawTouch("Down", 981, point); RawTouch("Up", 981, point);
+                    HudCheck(historyClicks == 1, "ordinary history tap emits one original UI click after finger release (observed " + historyClicks + ")");
+                    clickEvent.RemoveEventHandler(output, clickListener);
                     // Whitespace exercises original submit/history/channel handlers
                     // without sending a fixture message to any server.
                     originalInput!.GetType().GetProperty("Text")!.SetValue(originalInput, " ");
@@ -450,7 +464,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 await OnMain(() =>
                 {
                     HudCheck(!Descendants(Get(ui, "RootControl")!).Any(c => c.GetType().Name == "MobileServerUiAdapter"), "opt-out removes all mobile HUD presentation");
-                    HudCheck(Get(originalChat!, "Visible") is true && ReferenceEquals(Get(originalPanel!, "Parent"), originalChat), "opt-out restores original server chat ownership and visibility");
+                    HudCheck(Get(originalChat!, "Visible") is true && ReferenceEquals(Get(originalChat!, "Parent"), originalScreen) && ReferenceEquals(Get(originalPanel!, "Parent"), originalChat), "opt-out restores original server chat ownership and visibility");
                     HudCheck(ReferenceEquals(Get(firstButton!, "Parent"), originalBar) && Descendants(firstButton!).Where(c => c.GetType().Name == "Label").All(c => Get(c, "Visible") is true), "opt-out restores original menu layout and keyboard legends");
                     Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "true");
                     return true;
