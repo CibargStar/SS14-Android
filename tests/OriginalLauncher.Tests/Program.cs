@@ -54,20 +54,23 @@ Dispatcher.UIThread.RunJobs();
 Assert(Locator.Current.GetRequiredService<DataManager>().GetCVar(CVars.HasDismissedEarlyAccessWarning),
     "pointer click reaches the original early-access acknowledgement command");
 var mobileViewport = grid.Children.OfType<LauncherFitViewport>().Single();
-foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(1040, 480), new Size(960, 540) })
+foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(1040, 480), new Size(960, 540), new Size(480, 320) })
 {
     host.Width = size.Width;
     host.Height = size.Height;
     Dispatcher.UIThread.RunJobs();
     var top = main.TranslatePoint(default, grid)!.Value;
     var bottom = main.TranslatePoint(new Point(main.Bounds.Width, main.Bounds.Height), grid)!.Value;
-    Assert(main.Bounds.Width >= 799 && main.Bounds.Height >= 499,
-        $"original launcher retains finite desktop layout at {size}");
+    Assert(Math.Abs(main.Bounds.Width - size.Width / mobileViewport.Scale) < 1 &&
+           Math.Abs(main.Bounds.Height - size.Height / mobileViewport.Scale) < 1,
+        $"mobile launcher lays out at actual viewport size at {size}");
     Assert(top.X >= -1 && top.Y >= -1 && bottom.X <= size.Width + 1 && bottom.Y <= size.Height + 1,
         $"complete launcher fits viewport without outer scrolling at {size}");
     Assert(mobileViewport.Scale > 0 && mobileViewport.Scale <= 1,
         $"launcher uses uniform downscaling at {size}");
 }
+Assert(main.GetVisualDescendants().OfType<MainWindowLogin>().Single().FindControl<ScrollViewer>("LoginScroll") is not null,
+    "original authentication screens have a native scrolling viewport");
 var direct = new DirectConnectDialog();
 var result = direct.ShowDialog<string?>(main);
 Assert(!main.IsEnabled && grid.Children.Count == 2, "original direct-connect dialog is modal");
@@ -137,18 +140,41 @@ for (var index = 0; index < 180; index++)
     });
 Dispatcher.UIThread.RunJobs();
 Assert(model.LoggedIn && model.ServersTab.SearchedServers.Count > 0, "original authenticated hub displays local fixture servers");
-foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(1040, 480), new Size(960, 540) })
+foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(1040, 480), new Size(960, 540), new Size(480, 320) })
 {
     host.Width = size.Width;
     host.Height = size.Height;
+    Dispatcher.UIThread.RunJobs();
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick(3);
     Dispatcher.UIThread.RunJobs();
     using var hubFrame = host.CaptureRenderedFrame();
     hubFrame!.Save($"artifacts/launcher-hub-fit-{size.Width}x{size.Height}.png");
     var tabs = main.GetVisualDescendants().OfType<TabControl>().Single();
     var bottom = main.TranslatePoint(new Point(main.Bounds.Width, main.Bounds.Height), grid)!.Value;
-    Assert(bottom.X <= size.Width + 1 && bottom.Y <= size.Height + 1 && tabs.Bounds.Height > 200,
+    Assert(bottom.X <= size.Width + 1 && bottom.Y <= size.Height + 1 && tabs.Bounds.Height > 150,
         $"original hub and navigation fit complete phone viewport at {size}");
     Assert(grid.Children.All(child => child is not ScrollViewer), "hub has no outer scrolling container");
+    var rows = main.GetVisualDescendants().OfType<SS14.Launcher.Views.MainWindowTabs.ServerEntryView>()
+        .Where(row => row.IsVisible && row.Bounds.Height > 0).ToArray();
+    Assert(rows.Length > 0, "native server cards are realized");
+    foreach (var row in rows.Take(3))
+    {
+        var connect = row.FindControl<Border>("ConnectCell")!;
+        var name = row.FindControl<Border>("ServerNameCell")!;
+        Assert(connect.Child is Button { MinHeight: >= 48, Command: not null }, "original connect command has a touch-sized target");
+        Assert(connect.Bounds.Left >= name.Bounds.Right - 1 && connect.Bounds.Width > 80,
+            "server name and connect action do not overlap");
+    }
+    var listView = main.GetVisualDescendants().OfType<SS14.Launcher.Views.MainWindowTabs.ServerListTabView>().Single();
+    var toolbar = listView.FindControl<DockPanel>("SearchToolbar")!;
+    Assert(toolbar.Bounds.Height >= 44 && toolbar.Bounds.Top < 8, "search stays at the top with touch targets");
+    model.ServersTab.FiltersVisible = true;
+    Dispatcher.UIThread.RunJobs();
+    var filters = listView.GetVisualDescendants().OfType<SS14.Launcher.Views.MainWindowTabs.ServerListFiltersView>().Single();
+    Assert(filters.Bounds.Height > 15 && filters.Bounds.Bottom <= listView.Bounds.Height + 1,
+        "filters retain a bounded scrolling pane on short screens");
+    model.ServersTab.FiltersVisible = false;
+    Dispatcher.UIThread.RunJobs();
 }
 logins.ActiveAccountId = null;
 Locator.Current.GetRequiredService<DataManager>().RemoveLogin(fixtureLogin);

@@ -36,7 +36,7 @@ dotnet run --project tests/EnginePatch.Checks -p:AndroidLauncher=true -- \
 ```bash
 export SDL_VIDEODRIVER=offscreen EGL_PLATFORM=surfaceless ALSOFT_DRIVERS=null
 export SS14_CHECK_INPUT=1 SS14_CHECK_CAMERA=1 SS14_CHECK_THUMBSTICK=1
-export SS14_CHECK_HUD=1 ROBUST_ANDROID_MOBILE_UI=true
+export SS14_CHECK_HUD=1 SS14_CHECK_LOBBY=1 ROBUST_ANDROID_MOBILE_UI=true
 dotnet run --project tests/OriginalClient.VisualCheck -p:AndroidLauncher=true -- \
   engine.zip SIGNATURE_HEX public.pem SS14.Client.zip native-dir artifacts/visual
 ```
@@ -46,6 +46,7 @@ dotnet run --project tests/OriginalClient.VisualCheck -p:AndroidLauncher=true --
 | Ввод | Native `SDL_PushEvent → Clyde → GameController → UI/InputManager`, стик down/motion/up, потерянный SDL_UP, второй палец, повторный pointer ID, исходная кнопка Options |
 | Камера | Проекция, вращение, выбор предмета, сохранение Eye/FOV, обычный tap без случайного клика при жесте |
 | HUD | Исходный DefaultGameScreen, три режима чата, привязка к углу, иконки, действие на down без повторения на up/подсказки, свайп без клика, submit, черновик, widget lookup/ancestor handler и восстановление UI |
+| Лобби и руководство | Исходные панели, границы окна/кнопки закрытия, узкая компоновка, оглавление, touch-прокрутка, вкладки персонажей, восстановление порядка и родителей при отключении |
 | Debug | Открытие SDL-нажатием, измерение FPS/CPU/памяти, остановка опроса после закрытия |
 
 Карта и eye создаются в fixture. Прямой вызов `UI.TouchFinger` не заменяет native-цепочку: он пропускает ошибки подписки на события. HUD-submit проверяется без сетевой отправки; IME, сообщения и popup дополнительно проверяются на телефоне.

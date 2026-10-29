@@ -410,6 +410,8 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 {
                     CornerCheck("minimal");
                     HudCheck(Get(HudFind("MobileChatDock"), "Mode")!.ToString() == "Minimal", "chat starts in explicit minimal mode");
+                    HudCheck(Number(Get(HudFind("MobileChatExpand"), "GlobalPixelPosition")!, "X") < Number(Get(HudFind("MobileChatToggle"), "GlobalPixelPosition")!, "X"),
+                        "expand action is on the left and hide action on the right");
                     var icons = Descendants(originalBar!).Where(c => c.GetType().Name == "TextureRect" && Get(c, "VisibleInTree") is true).ToArray();
                     HudCheck(icons.Length > 0 && icons.All(icon =>
                     {
@@ -557,6 +559,210 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     Get(ui, "StateRoot")!.GetType().GetProperty("Visible")!.SetValue(Get(ui, "StateRoot"), true);
                     return true;
                 });
+            }
+            if (Environment.GetEnvironmentVariable("SS14_CHECK_LOBBY") == "1")
+            {
+                void LayoutCheck(bool success, string name)
+                {
+                    if (!success) throw new Exception("Mobile lobby/guide: " + name);
+                    Console.WriteLine("LAYOUT PASS " + name);
+                }
+                object FindLayout(string name) => Descendants(Get(ui, "RootControl")!).First(c => Get(c, "Name")?.ToString() == name);
+                void LayoutTap(object control)
+                {
+                    var point = Vector(Get(control, "GlobalPixelPosition")!) + Vector(Get(control, "PixelSize")!) / 2;
+                    RawTouch("Down", 975, point); RawTouch("Up", 975, point);
+                }
+                void SetScale(float value)
+                {
+                    var cfgType = shared.GetType("Robust.Shared.Configuration.IConfigurationManager", true)!;
+                    var cfg = Resolve(cfgType);
+                    var definition = shared.GetType("Robust.Shared.CVars", true)!.GetField("DisplayUIScale")!.GetValue(null);
+                    var setter = cfgType.GetMethods().Single(m => m.Name == "SetCVar" && m.IsGenericMethodDefinition &&
+                        m.GetParameters()[0].ParameterType.IsGenericType).MakeGenericMethod(typeof(float));
+                    var values = setter.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : Type.Missing).ToArray();
+                    values[0] = definition; values[1] = value;
+                    setter.Invoke(cfg, values);
+                }
+                void Inside(object control, string name)
+                {
+                    var p = Vector(Get(control, "GlobalPixelPosition")!);
+                    var s = Vector(Get(control, "PixelSize")!);
+                    var viewport = Vector(Get(Get(ui, "RootControl")!, "PixelSize")!);
+                    LayoutCheck(p.X >= -1 && p.Y >= -1 && p.X + s.X <= viewport.X + 1 && p.Y + s.Y <= viewport.Y + 1 && s.X > 0 && s.Y > 0,
+                        name + $" stays inside the viewport: position={p}, size={s}, viewport={viewport}");
+                }
+                object? lobby = null, left = null, right = null, originalSplit = null, guide = null, tree = null, article = null;
+                object[]? originalActions = null;
+                object? originalActionBar = null;
+                await OnMain(() =>
+                {
+                    Get(ui, "StateRoot")!.GetType().GetProperty("Visible")!.SetValue(Get(ui, "StateRoot"), false);
+                    ui.GetType().GetMethod("LoadScreen")!.MakeGenericMethod(loaded.LoadedAssembly.GetType("Content.Client.Lobby.UI.LobbyGui", true)!).Invoke(ui, null);
+                    lobby = Get(ui, "ActiveScreen")!;
+                    left = Descendants(lobby).Single(c => Get(c, "Name")?.ToString() == "LeftSide");
+                    right = Descendants(lobby).Single(c => Get(c, "Name")?.ToString() == "RightSide");
+                    originalSplit = Get(left, "Parent");
+                    originalActionBar = Get(Descendants(lobby).Single(c => Get(c, "Name")?.ToString() == "AHelpButton"), "Parent");
+                    originalActions = ((IEnumerable)Get(originalActionBar!, "Children")!).Cast<object>().ToArray();
+                    var server = Descendants(lobby).Single(c => Get(c, "Name")?.ToString() == "ServerName");
+                    server.GetType().GetProperty("Text")!.SetValue(server, "Space Station 14 — mobile lobby");
+                    return true;
+                });
+                await Task.Delay(900);
+                await Capture("mobile-lobby-wide");
+                await OnMain(() =>
+                {
+                    LayoutCheck(Descendants(FindLayout("MobileLobbyScroll")).Contains(left!) && Descendants(FindLayout("MobileLobbyServerScroll")).Contains(right!),
+                        "original lobby controls are retained in native scrolling panes");
+                    Inside(FindLayout("MobileLobbyPanel"), "lobby");
+                    LayoutCheck(!Descendants(overlay).Any(c => c.GetType().Name == "VirtualThumbstick" && Get(c, "VisibleInTree") is true),
+                        "movement stick does not cover lobby controls");
+                    Inside(FindLayout("MobileDisplayButton"), "UI settings action");
+                    LayoutCheck(FindLayout("ObserveButton").GetType().Name == "UICommandButton", "observe retains the original permission-aware command button");
+                    Inside(FindLayout("ReadyButton"), "ready action");
+                    return true;
+                });
+                await Capture("mobile-lobby-wide");
+                await OnMain(() =>
+                {
+                    guide = Activator.CreateInstance(loaded.LoadedAssembly.GetType("Content.Client.Guidebook.Controls.GuidebookWindow", true)!)!;
+                    tree = Descendants(guide).Single(c => Get(c, "Name")?.ToString() == "TreeBox");
+                    article = Descendants(guide).Single(c => Get(c, "Name")?.ToString() == "Scroll");
+                    var prototypeManagerType = shared.GetType("Robust.Shared.Prototypes.IPrototypeManager", true)!;
+                    var prototypeManager = Resolve(prototypeManagerType);
+                    var guidePrototype = AppDomain.CurrentDomain.GetAssemblies().Single(a => a.GetName().Name == "Content.Shared")
+                        .GetType("Content.Shared.Guidebook.GuideEntryPrototype", true)!;
+                    var prototypes = (IEnumerable)prototypeManagerType.GetMethods().Single(m => m.Name == "EnumeratePrototypes" && m.IsGenericMethodDefinition)
+                        .MakeGenericMethod(guidePrototype).Invoke(prototypeManager, null)!;
+                    var update = guide.GetType().GetMethod("UpdateGuides")!;
+                    var dictionaryType = update.GetParameters()[0].ParameterType;
+                    var entries = (IDictionary)Activator.CreateInstance(dictionaryType)!;
+                    var keyType = dictionaryType.GenericTypeArguments[0];
+                    foreach (var prototype in prototypes)
+                    {
+                        var id = Get(prototype, "ID")!.ToString()!;
+                        entries.Add(Activator.CreateInstance(keyType, [id])!, prototype);
+                    }
+                    var selected = entries.Keys.Cast<object>().FirstOrDefault(k => k.ToString() == "SS14") ?? entries.Keys.Cast<object>().First();
+                    update.Invoke(guide, [entries, null, null, selected]);
+                    guide.GetType().GetMethod("OpenCentered")!.Invoke(guide, null);
+                    return true;
+                });
+                await Task.Delay(900);
+                await OnMain(() =>
+                {
+                    Inside(guide!, "guide window");
+                    Inside(Descendants(guide!).First(c => Get(c, "Name")?.ToString() == "CloseButton"), "guide close action");
+                    LayoutCheck(Descendants(FindLayout("MobileGuidebookPanel")).Contains(tree!) && Descendants(FindLayout("MobileGuidebookPanel")).Contains(article!),
+                        "guide keeps the original tree, document and ancestor link handlers");
+                    LayoutCheck(Descendants(Descendants(guide!).Single(c => Get(c, "Name")?.ToString() == "EntryContainer")).Count() > 5, "original guide document is parsed and displayed");
+                    return true;
+                });
+                await Capture("mobile-guide-wide");
+                await OnMain(() => { SetScale(3); return true; });
+                await Task.Delay(800);
+                await OnMain(() =>
+                {
+                    Inside(guide!, "compact guide window");
+                    LayoutCheck(Get(FindLayout("MobileGuideNavigation"), "Visible") is false && Get(FindLayout("MobileGuideArticle"), "Visible") is true,
+                        "compact guide starts with the full-width article");
+                    LayoutTap(FindLayout("MobileGuideSections"));
+                    return true;
+                });
+                await Task.Delay(400);
+                await OnMain(() =>
+                {
+                    LayoutCheck(Get(FindLayout("MobileGuideNavigation"), "VisibleInTree") is true && Get(FindLayout("MobileGuideArticle"), "Visible") is false,
+                        "native contents action switches to the original guide tree");
+                    LayoutTap(FindLayout("MobileGuideSections"));
+                    return true;
+                });
+                await Task.Delay(400);
+                await Capture("mobile-guide-compact");
+                await OnMain(() =>
+                {
+                    var scroll = article!;
+                    var before = Number(scroll, "VScrollTarget");
+                    var point = Vector(Get(scroll, "GlobalPixelPosition")!) + Vector(Get(scroll, "PixelSize")!) * new Vector2(0.6f, 0.7f);
+                    RawTouch("Down", 976, point); RawTouch("Motion", 976, point - new Vector2(0, 120)); RawTouch("Up", 976, point - new Vector2(0, 120));
+                    LayoutCheck(Number(scroll, "VScrollTarget") > before, "native touch swipe scrolls the original guide document");
+                    LayoutTap(Descendants(guide!).First(c => Get(c, "Name")?.ToString() == "CloseButton"));
+                    return true;
+                });
+                await Task.Delay(500);
+                await OnMain(() =>
+                {
+                    LayoutCheck(Get(guide!, "IsOpen") is false, "original close callback closes the adapted guide");
+                    LayoutCheck(!Descendants(guide!).Any(c => Get(c, "Name")?.ToString() == "MobileGuidebookPanel"), "closing guide restores its native layout");
+                    Inside(FindLayout("MobileLobbyTab"), "compact lobby navigation");
+                    LayoutTap(FindLayout("MobileLobbyServerTab"));
+                    return true;
+                });
+                await Task.Delay(400);
+                await OnMain(() =>
+                {
+                    LayoutCheck(Get(FindLayout("MobileLobbyServerScroll"), "VisibleInTree") is true,
+                        "compact lobby exposes the original server actions through native navigation");
+                    Inside(FindLayout("MobileLobbyServerScroll"), "compact server pane");
+                    return true;
+                });
+                await Capture("mobile-lobby-compact");
+                object? characterGui = null, characterEditor = null, characterBody = null;
+                await OnMain(() =>
+                {
+                    LayoutTap(FindLayout("MobileLobbyTab"));
+                    var controllerType = loaded.LoadedAssembly.GetType("Content.Client.Lobby.LobbyUIController", true)!;
+                    var controller = ui.GetType().GetMethod("GetUIController")!.MakeGenericMethod(controllerType).Invoke(ui, null)!;
+                    var pair = controllerType.GetMethod("EnsureGui", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(controller, null)!;
+                    characterGui = pair.GetType().GetField("Item1")!.GetValue(pair)!;
+                    characterEditor = Descendants(characterGui).Single(c => Get(c, "Name")?.ToString() == "CharEditor");
+                    characterBody = Get(characterEditor, "Parent");
+                    var state = Descendants(lobby!).Single(c => Get(c, "Name")?.ToString() == "CharacterSetupState");
+                    if (Get(characterGui, "Parent") == null) state.GetType().GetMethod("AddChild")!.Invoke(state, [characterGui]);
+                    state.GetType().GetProperty("Visible")!.SetValue(state, true);
+                    var normal = Descendants(lobby!).Single(c => Get(c, "Name")?.ToString() == "DefaultState");
+                    normal.GetType().GetProperty("Visible")!.SetValue(normal, false);
+                    return true;
+                });
+                await Task.Delay(800);
+                await OnMain(() =>
+                {
+                    LayoutCheck(Descendants(FindLayout("MobileCharacterEditor")).Contains(characterEditor!), "character editor keeps the original server form");
+                    Inside(FindLayout("MobileCharacterPanel"), "character workspace");
+                    Inside(FindLayout("MobileCharacterPickerTab"), "character list action");
+                    Inside(FindLayout("MobileCharacterEditorTab"), "character editor action");
+                    LayoutTap(FindLayout("MobileCharacterPickerTab"));
+                    return true;
+                });
+                await Task.Delay(400);
+                await OnMain(() =>
+                {
+                    LayoutCheck(Get(FindLayout("MobileCharacterPicker"), "VisibleInTree") is true && Get(FindLayout("MobileCharacterEditor"), "Visible") is false,
+                        "character navigation exposes the original picker separately");
+                    LayoutTap(FindLayout("MobileCharacterEditorTab"));
+                    return true;
+                });
+                await Task.Delay(400);
+                await Capture("mobile-character-editor");
+                await OnMain(() => { Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "false"); return true; });
+                await Task.Delay(500);
+                await OnMain(() =>
+                {
+                    LayoutCheck(ReferenceEquals(Get(left!, "Parent"), originalSplit) && ReferenceEquals(Get(right!, "Parent"), originalSplit),
+                        "opt-out restores both original lobby panels and their split");
+                    LayoutCheck(!Descendants(lobby!).Any(c => Get(c, "Name")?.ToString() == "MobileLobbyPanel"), "opt-out removes all mobile lobby layout");
+                    LayoutCheck(ReferenceEquals(Get(characterEditor!, "Parent"), characterBody), "opt-out restores original character editor ownership");
+                    LayoutCheck(((IEnumerable)Get(originalActionBar!, "Children")!).Cast<object>().SequenceEqual(originalActions!),
+                        "opt-out restores exact server action order and instances");
+                    ui.GetType().GetMethod("UnloadScreen")!.Invoke(ui, null);
+                    ((IDisposable)guide!).Dispose();
+                    SetScale(0);
+                    Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "true");
+                    Get(ui, "StateRoot")!.GetType().GetProperty("Visible")!.SetValue(Get(ui, "StateRoot"), true);
+                    return true;
+                });
+                await Task.Delay(300);
             }
             await OnMain(() =>
             {

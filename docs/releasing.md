@@ -4,7 +4,7 @@
 
 ## 1. Зафиксировать исходники
 
-Обновите version code/display version, патчи, CHANGELOG и результаты проверок. Проверьте патчи на чистом upstream и сохраните source SHA запусков CI. Для изменений ввода обязателен [OriginalClient.VisualCheck](testing.md) на окончательном подписанном пакете: `SS14_CHECK_INPUT=1`, `SS14_CHECK_CAMERA=1`, `SS14_CHECK_THUMBSTICK=1`, `SS14_CHECK_HUD=1`, `ROBUST_ANDROID_MOBILE_UI=true`. События должны проходить native SDL.
+Обновите version code/display version, патчи, CHANGELOG и результаты проверок. Проверьте патчи на чистом upstream и сохраните source SHA запусков CI. Для изменений ввода обязателен [OriginalClient.VisualCheck](testing.md) на окончательном подписанном пакете: `SS14_CHECK_INPUT=1`, `SS14_CHECK_CAMERA=1`, `SS14_CHECK_THUMBSTICK=1`, `SS14_CHECK_HUD=1`, `SS14_CHECK_LOBBY=1`, `ROBUST_ANDROID_MOBILE_UI=true`. События должны проходить native SDL.
 
 Запустите `engine-versions.yml` с CSV точных версий, а `android-client.yml` — для `android-arm64` и `android-x64`, `runtime=coreclr`, `engine_channel=published` и новым `version_code`.
 

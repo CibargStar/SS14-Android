@@ -27,7 +27,7 @@ index a788ade..c469bef 100644
      <PackageVersion Include="Dapper" Version="2.0.123"/>
      <PackageVersion Include="DynamicData" Version="8.4.1"/>
 diff --git a/SS14.Launcher/App.xaml.cs b/SS14.Launcher/App.xaml.cs
-index 214def3..5063d0a 100644
+index 214def3..4a1bdae 100644
 --- a/SS14.Launcher/App.xaml.cs
 +++ b/SS14.Launcher/App.xaml.cs
 @@ -5,6 +5,7 @@ using System.Threading.Tasks;
@@ -78,22 +78,20 @@ index 214def3..5063d0a 100644
  
          if (ConfigConstants.IsAuthOverride)
          {
-@@ -160,7 +171,27 @@ public class App : Application
+@@ -160,7 +171,25 @@ public class App : Application
              viewModel.StartAuthOverrideCountdown();
          }
  
 -        window.Show();
 +        if (LauncherMobile.DataRoot != null)
 +        {
-+            var minimumHeight = window.MinHeight;
-+            var minimumWidth = window.MinWidth;
 +            window.MinWidth = 0;
 +            window.MinHeight = 0;
 +            window.Width = double.NaN;
 +            window.Height = double.NaN;
 +            var root = new Grid();
 +            LauncherMobile.Root = root;
-+            root.Children.Add(new LauncherFitViewport(new Avalonia.Size(minimumWidth, minimumHeight))
++            root.Children.Add(new LauncherFitViewport(new Avalonia.Size(480, 240))
 +            {
 +                Child = window, ClipToBounds = true
 +            });
@@ -108,7 +106,7 @@ index 214def3..5063d0a 100644
  
      private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
 diff --git a/SS14.Launcher/Assets/Locale/en-US/text.ftl b/SS14.Launcher/Assets/Locale/en-US/text.ftl
-index ad61969..62d87d3 100644
+index ad61969..a5cadb3 100644
 --- a/SS14.Launcher/Assets/Locale/en-US/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/en-US/text.ftl
 @@ -34,6 +34,14 @@ connecting-status-update-error =
@@ -131,10 +129,10 @@ index ad61969..62d87d3 100644
  # Generic "Done!" message used for some buttons.
  button-done = Done!
 +
-+tab-options-android-mobile-ui = Mobile chat and icon menu
-+tab-options-android-mobile-ui-desc = Replace the server chat/menu layout with the Android layout. Restart the game to apply. Turn off to use the original server UI.
++tab-options-android-mobile-ui = Mobile game interface
++tab-options-android-mobile-ui-desc = Adapt chat, menu, lobby and guidebook to the phone screen. Restart the game to apply. Turn off to use the original server UI.
 diff --git a/SS14.Launcher/Assets/Locale/ru/text.ftl b/SS14.Launcher/Assets/Locale/ru/text.ftl
-index e81f9f2..e5bf3db 100644
+index e81f9f2..227abac 100644
 --- a/SS14.Launcher/Assets/Locale/ru/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/ru/text.ftl
 @@ -547,6 +547,14 @@ server-entry-round-time =
@@ -157,8 +155,8 @@ index e81f9f2..e5bf3db 100644
  tab-options-clear-content-close-client = Сперва закройте запущенные клиенты
  button-done = Готово!
 +
-+tab-options-android-mobile-ui = Мобильный чат и панель меню
-+tab-options-android-mobile-ui-desc = Заменять компоновку чата и меню сервера мобильной. Применяется при следующем запуске игры. Отключите для исходного интерфейса сервера.
++tab-options-android-mobile-ui = Мобильный интерфейс игры
++tab-options-android-mobile-ui-desc = Адаптировать чат, меню, лобби и руководство под экран телефона. Применяется при следующем запуске игры. Отключите для исходного интерфейса сервера.
 diff --git a/SS14.Launcher/Helpers.cs b/SS14.Launcher/Helpers.cs
 index c1293e1..2e324c7 100644
 --- a/SS14.Launcher/Helpers.cs
@@ -203,7 +201,7 @@ index c1293e1..2e324c7 100644
      {
 diff --git a/SS14.Launcher/LauncherFitViewport.cs b/SS14.Launcher/LauncherFitViewport.cs
 new file mode 100644
-index 0000000..70c3b9f
+index 0000000..7f5669b
 --- /dev/null
 +++ b/SS14.Launcher/LauncherFitViewport.cs
 @@ -0,0 +1,40 @@
@@ -214,8 +212,8 @@ index 0000000..70c3b9f
 +
 +namespace SS14.Launcher;
 +
-+// Give upstream a finite desktop layout, then fit that layout uniformly into
-+// the Android client area. Lists keep their own finite scrolling viewport.
++// Measure the responsive upstream views against the actual Android viewport.
++// Uniform downscaling is only a fallback below the minimum usable mobile size.
 +public sealed class LauncherFitViewport(Size minimum) : Decorator
 +{
 +    public double Scale { get; private set; } = 1;
@@ -1043,6 +1041,41 @@ index 485a865..d6840dd 100644
      <Setter Property="FontFamily" Value="/Assets/Fonts/noto_sans/*.ttf#Noto Sans" />
    </Style>
  
+diff --git a/SS14.Launcher/Theme/ThemeOverlayBox.xaml b/SS14.Launcher/Theme/ThemeOverlayBox.xaml
+index 60d10f9..e4d1557 100644
+--- a/SS14.Launcher/Theme/ThemeOverlayBox.xaml
++++ b/SS14.Launcher/Theme/ThemeOverlayBox.xaml
+@@ -7,7 +7,7 @@
+         <Panel HorizontalAlignment="Center" VerticalAlignment="Center">
+           <views:AngleBox Fill="{TemplateBinding Background}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+ 
+-          <Panel Margin="14 0">
++          <ScrollViewer Margin="14 0" HorizontalScrollBarVisibility="Disabled">
+             <ContentPresenter Name="PART_ContentPresenter"
+                               Background="{TemplateBinding Background}"
+                               BorderBrush="{TemplateBinding BorderBrush}"
+@@ -18,7 +18,7 @@
+                               VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
+ 
+-          </Panel>
++          </ScrollViewer>
+         </Panel>
+       </Panel>
+     </ControlTemplate>
+diff --git a/SS14.Launcher/Theme/ThemeServerList.axaml b/SS14.Launcher/Theme/ThemeServerList.axaml
+index 34b7dc4..2af11db 100644
+--- a/SS14.Launcher/Theme/ThemeServerList.axaml
++++ b/SS14.Launcher/Theme/ThemeServerList.axaml
+@@ -73,7 +73,7 @@
+             <Panel.Background>
+               <SolidColorBrush Color="#1e1e22" />
+             </Panel.Background>
+-            <Grid RowDefinitions="*,Auto" MinHeight="150">
++            <Grid RowDefinitions="*,Auto" MinHeight="0">
+               <ScrollViewer Grid.Row="0"
+                             HorizontalScrollBarVisibility="Disabled"
+                             VerticalScrollBarVisibility="Auto">
 diff --git a/SS14.Launcher/Theme/ThemeWindow.xaml b/SS14.Launcher/Theme/ThemeWindow.xaml
 index 71548b9..e55275e 100644
 --- a/SS14.Launcher/Theme/ThemeWindow.xaml
@@ -1499,6 +1532,129 @@ index 93a3738..c65b805 100644
  {
      private MainWindowViewModel? _viewModel;
  
+diff --git a/SS14.Launcher/Views/MainWindowContent.xaml b/SS14.Launcher/Views/MainWindowContent.xaml
+index fe18b40..0dc9d0d 100644
+--- a/SS14.Launcher/Views/MainWindowContent.xaml
++++ b/SS14.Launcher/Views/MainWindowContent.xaml
+@@ -1,4 +1,4 @@
+-﻿<UserControl xmlns="https://github.com/avaloniaui"
++<UserControl xmlns="https://github.com/avaloniaui"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+@@ -12,6 +12,22 @@
+     <vm:MainWindowViewModel />
+   </Design.DataContext>
+ 
++  <UserControl.Styles>
++    <Style Selector="v|MainWindowContent.mobile Button">
++      <Setter Property="MinHeight" Value="44" />
++    </Style>
++    <Style Selector="v|MainWindowContent.mobile TextBox">
++      <Setter Property="MinHeight" Value="44" />
++    </Style>
++    <Style Selector="v|MainWindowContent.mobile TabItem">
++      <Setter Property="MinHeight" Value="44" />
++      <Setter Property="Padding" Value="10,6" />
++    </Style>
++    <Style Selector="v|MainWindowContent.mobile CheckBox">
++      <Setter Property="MinHeight" Value="40" />
++    </Style>
++  </UserControl.Styles>
++
+   <Panel>
+     <DockPanel LastChildFill="true">
+       <!-- Header -->
+@@ -22,13 +38,13 @@
+ 
+         <DockPanel Name="HeaderPanel" Classes="MainWindowHeader">
+           <!-- Logo -->
+-          <Image DockPanel.Dock="Left" HorizontalAlignment="Left" Height="60" Margin="0, 0, 0, 8"
++          <Image Name="HeaderLogo" DockPanel.Dock="Left" HorizontalAlignment="Left" Height="60" Margin="0, 0, 0, 8"
+                  Source="{DynamicResource LogoLong}" />
+           <!--<v:Logo DockPanel.Dock="Left" Height="60" HorizontalAlignment="Left" Margin="0, 8"></v:Logo>-->
+-          <Grid DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"
++          <Grid Name="HeaderTools" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"
+                 ColumnDefinitions="Auto, Auto" RowDefinitions="Auto, Auto" Margin="0, 0, 3, 0">
+             <!-- Discord link -->
+-            <Button Grid.Row="0" Grid.Column="0" MinWidth="90"
++            <Button Name="DiscordLink" Grid.Row="0" Grid.Column="0" MinWidth="90"
+                     Command="{Binding OnDiscordButtonPressed}" Classes="OpenBoth"
+                     Margin="0, 6, 2, 2">
+               <v:IconLabel Icon="{DynamicResource InfoIcon-discord}"
+@@ -36,14 +52,14 @@
+             </Button>
+ 
+             <!-- Website link -->
+-            <Button Grid.Row="0" Grid.Column="1" MinWidth="90"
++            <Button Name="WebsiteLink" Grid.Row="0" Grid.Column="1" MinWidth="90"
+                     Command="{Binding OnWebsiteButtonPressed}" Classes="OpenLeft"
+                     Margin="0, 6, 0, 2">
+               <v:IconLabel Icon="{DynamicResource InfoIcon-web}" Content="{loc:Loc main-window-header-link-website}" />
+             </Button>
+ 
+             <!-- Account drop down -->
+-            <v:AccountDropDown Grid.ColumnSpan="2" Grid.Row="1"
++            <v:AccountDropDown Name="HeaderAccount" Grid.ColumnSpan="2" Grid.Row="1"
+                                IsEnabled="{Binding $parent.DataContext.AccountDropDownVisible}"
+                                DataContext="{Binding AccountDropDown}" />
+           </Grid>
+diff --git a/SS14.Launcher/Views/MainWindowContent.xaml.cs b/SS14.Launcher/Views/MainWindowContent.xaml.cs
+index bafb5b6..ad1d0c0 100644
+--- a/SS14.Launcher/Views/MainWindowContent.xaml.cs
++++ b/SS14.Launcher/Views/MainWindowContent.xaml.cs
+@@ -1,4 +1,5 @@
+-﻿using Avalonia.Controls;
++using Avalonia;
++using Avalonia.Controls;
+ 
+ namespace SS14.Launcher.Views;
+ 
+@@ -7,5 +8,30 @@ public sealed partial class MainWindowContent : UserControl
+     public MainWindowContent()
+     {
+         InitializeComponent();
++        if (LauncherMobile.DataRoot == null) return;
++        Classes.Add("mobile");
++        FontSize = 16;
++        HeaderPanel.Margin = new Thickness(6, 0);
++        HeaderLogo.Height = 42;
++        HeaderLogo.MaxWidth = 190;
++        HeaderLogo.Margin = new Thickness(0, 3, 8, 3);
++        HeaderTools.RowDefinitions = new RowDefinitions("Auto");
++        HeaderTools.ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*");
++        HeaderTools.MaxWidth = 280;
++        foreach (var link in new[] { DiscordLink, WebsiteLink })
++        {
++            link.MinWidth = 44;
++            link.Margin = new Thickness(1, 2);
++            if (link.Content is IconLabel icon)
++            {
++                ToolTip.SetTip(link, icon.Content);
++                icon.Content = null;
++            }
++        }
++        Grid.SetRow(HeaderAccount, 0);
++        Grid.SetColumn(HeaderAccount, 2);
++        Grid.SetColumnSpan(HeaderAccount, 1);
++        HeaderAccount.MinWidth = 140;
++        HeaderAccount.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+     }
+ }
+diff --git a/SS14.Launcher/Views/MainWindowLogin.xaml b/SS14.Launcher/Views/MainWindowLogin.xaml
+index 4967680..310c7b0 100644
+--- a/SS14.Launcher/Views/MainWindowLogin.xaml
++++ b/SS14.Launcher/Views/MainWindowLogin.xaml
+@@ -24,6 +24,8 @@
+     </DockPanel>
+     <Panel Background="{DynamicResource ThemeStripebackEdgeBrush}" MinHeight="2" DockPanel.Dock="Bottom" />
+ 
+-    <ContentControl Content="{Binding Screen}" />
++    <ScrollViewer Name="LoginScroll" HorizontalScrollBarVisibility="Disabled">
++      <ContentControl Content="{Binding Screen}" />
++    </ScrollViewer>
+   </DockPanel>
+ </UserControl>
 diff --git a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
 index c2427a4..e6111d7 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
@@ -1512,6 +1668,19 @@ index c2427a4..e6111d7 100644
          {
              Log.Error("Visual root isn't a window!");
              return;
+diff --git a/SS14.Launcher/Views/MainWindowTabs/NewsTabView.xaml b/SS14.Launcher/Views/MainWindowTabs/NewsTabView.xaml
+index cf1ed29..5941a54 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/NewsTabView.xaml
++++ b/SS14.Launcher/Views/MainWindowTabs/NewsTabView.xaml
+@@ -20,7 +20,7 @@
+           <ItemsControl.ItemTemplate>
+             <DataTemplate DataType="mainWindowTabs:NewsEntryViewModel">
+               <Button Margin="4, 4" Command="{Binding Open}">
+-                <TextBlock Text="{Binding Headline}" />
++                <TextBlock Text="{Binding Headline}" TextWrapping="Wrap" />
+               </Button>
+             </DataTemplate>
+           </ItemsControl.ItemTemplate>
 diff --git a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
 index 59e1c12..9b56b8a 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
@@ -1570,6 +1739,145 @@ index 6a51143..75d9beb 100644
 -        await new HubSettingsDialog().ShowDialog((Window)this.GetVisualRoot()!);
 +        var owner = this.GetLogicalAncestors().OfType<MainWindow>().FirstOrDefault();
 +        if (owner != null) await new HubSettingsDialog().ShowDialog(owner);
+     }
+ }
+diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
+index 47e6715..a7626b9 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
++++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
+@@ -25,7 +25,7 @@
+   <Panel>
+     <Expander Name="Expando" Classes="NoPad" IsExpanded="{Binding IsExpanded}">
+       <Expander.Header>
+-        <Grid>
++        <Grid Name="EntryHeader">
+           <Grid.ColumnDefinitions>
+             <ColumnDefinition Width="*" /> <!-- Server Name -->
+             <ColumnDefinition Width="100" /> <!-- Round Time -->
+@@ -33,18 +33,18 @@
+             <ColumnDefinition Width="112" /> <!-- Connect -->
+           </Grid.ColumnDefinitions>
+ 
+-          <Border Grid.Column="0" Classes="GridCell">
++          <Border Name="ServerNameCell" Grid.Column="0" Classes="GridCell">
+             <TextBlock VerticalAlignment="Center"
+               Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+               HorizontalAlignment="Left" />
+           </Border>
+ 
+-          <Border Grid.Column="1" Classes="GridCell" Grid.ColumnSpan="2"
++          <Border Name="ServerStatusCell" Grid.Column="1" Classes="GridCell" Grid.ColumnSpan="2"
+             IsVisible="{Binding !HaveData}">
+             <TextBlock Text="{Binding ServerStatusString}" TextAlignment="Left" Classes="Center" />
+           </Border>
+ 
+-          <Border Grid.Column="1" Classes="GridCell" IsVisible="{Binding HaveData}">
++          <Border Name="RoundCell" Grid.Column="1" Classes="GridCell" IsVisible="{Binding HaveData}">
+             <Panel>
+               <controls:TimerTextCell Value="{Binding RoundStartTime}"
+                 IsVisible="{Binding RoundStatusString,Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+@@ -55,11 +55,11 @@
+             </Panel>
+           </Border>
+ 
+-          <Border Grid.Column="2" Classes="GridCell" IsVisible="{Binding HaveData}">
++          <Border Name="PlayersCell" Grid.Column="2" Classes="GridCell" IsVisible="{Binding HaveData}">
+             <TextBlock DockPanel.Dock="Right" Classes="Numeric" Text="{Binding PlayerCountString}" />
+           </Border>
+ 
+-          <Border Grid.Column="3" Classes="GridCell">
++          <Border Name="ConnectCell" Grid.Column="3" Classes="GridCell">
+             <Button IsEnabled="{Binding IsOnline}" DockPanel.Dock="Right"
+               Content="{loc:Loc server-entry-connect}"
+               Command="{Binding ConnectCommand}" />
+diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
+index 554bf08..67f7e5f 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
++++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
+@@ -14,6 +14,33 @@ public partial class ServerEntryView : UserControl
+     {
+         InitializeComponent();
+ 
++        if (LauncherMobile.DataRoot != null)
++        {
++            // Reflow the original cells and commands; retain the same ViewModel.
++            EntryHeader.RowDefinitions = new RowDefinitions("Auto,Auto");
++            EntryHeader.ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,112");
++            EntryHeader.MinHeight = 72;
++            Grid.SetColumnSpan(ServerNameCell, 3);
++            Grid.SetRow(ServerStatusCell, 1);
++            Grid.SetColumn(ServerStatusCell, 0);
++            Grid.SetColumnSpan(ServerStatusCell, 3);
++            Grid.SetRow(RoundCell, 1);
++            Grid.SetColumn(RoundCell, 0);
++            Grid.SetRow(PlayersCell, 1);
++            Grid.SetColumn(PlayersCell, 2);
++            Grid.SetRowSpan(ConnectCell, 2);
++            foreach (var cell in new[] { ServerNameCell, ServerStatusCell, RoundCell, PlayersCell, ConnectCell })
++            {
++                cell.BorderThickness = new Thickness(0);
++                cell.Padding = new Thickness(6, 2);
++            }
++            if (ServerNameCell.Child is TextBlock name)
++            {
++                name.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
++                name.MaxLines = 2;
++            }
++            if (ConnectCell.Child is Button connect) connect.MinHeight = 48;
++        }
+         Links.LayoutUpdated += ApplyStyle;
+     }
+ 
+diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml
+index c3ef318..38f44e0 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml
++++ b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml
+@@ -19,7 +19,7 @@
+   </UserControl.Styles>
+ 
+   <DockPanel LastChildFill="True">
+-    <DockPanel DockPanel.Dock="Bottom" Margin="4 4 4 0" Height="32">
++    <DockPanel Name="SearchToolbar" DockPanel.Dock="Bottom" Margin="4 4 4 0" Height="32">
+       <Button DockPanel.Dock="Right" Command="{Binding RefreshPressed}"
+               IsEnabled="{Binding RefreshEnabled}"
+               Classes="OpenLeft" ToolTip.Tip="{loc:Loc tab-servers-refresh}">
+@@ -35,7 +35,7 @@
+ 
+     <Panel DockPanel.Dock="Bottom" Classes="ScrollViewerSep" />
+ 
+-    <Grid>
++    <Grid Name="ServerPanels">
+       <Grid.RowDefinitions>
+         <RowDefinition Height="*" MinHeight="180" /> <!-- Server List -->
+         <RowDefinition Height="4" /> <!-- Grabber -->
+@@ -43,7 +43,7 @@
+       </Grid.RowDefinitions>
+ 
+       <!-- Main server list table -->
+-      <mainWindowTabsViews:ServerList Grid.Row="0" DockPanel.Dock="Top" List="{Binding SearchedServers}"
++      <mainWindowTabsViews:ServerList Name="ServerRows" Grid.Row="0" DockPanel.Dock="Top" List="{Binding SearchedServers}"
+                                       ListText="{Binding ListText}"
+                                       SpinnerVisible="{Binding SpinnerVisible}"
+                                       ShowHeader="True"
+diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
+index 2768089..f37e192 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
++++ b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
+@@ -1,5 +1,4 @@
+ using Avalonia.Controls;
+-using Avalonia.Markup.Xaml;
+ 
+ namespace SS14.Launcher.Views.MainWindowTabs;
+ 
+@@ -8,5 +7,10 @@ public partial class ServerListTabView : UserControl
+     public ServerListTabView()
+     {
+         InitializeComponent();
++        if (LauncherMobile.DataRoot == null) return;
++        DockPanel.SetDock(SearchToolbar, Dock.Top);
++        SearchToolbar.Height = 48;
++        ServerRows.ShowHeader = false;
++        ServerPanels.RowDefinitions = new RowDefinitions("3*,4,2*");
      }
  }
 diff --git a/SS14.Loader/MobileLoader.cs b/SS14.Loader/MobileLoader.cs
