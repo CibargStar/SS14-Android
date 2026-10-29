@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | `launcher-android-platform.patch` | SS14.Launcher `18fa9830576023595bffb417b0eaeb929fee5934` | `bash scripts/prepare-original-launcher.sh` |
 | `robust-android-platform.patch` | RobustToolbox `160be31f57129c24c1715b873b92f14d028de8b8` | `bash scripts/prepare-engine.sh` |
+| `engine-versions/286.0.2.patch` | Точный Robust `v286.0.2`, API атласа/сериализации этой ветки | `python3 scripts/prepare-engine-version.py 286.0.2` |
 | `engine-versions/*.patch` | Семейства точных upstream-версий | `python3 scripts/prepare-engine-version.py VERSION` |
 
 Патч лаунчера добавляет Avalonia single-view lifetime, Android-адаптер окон/диалогов, storage, intents и обновления. Оригинальные XAML, ViewModel и сервисы используются непосредственно из submodule.
