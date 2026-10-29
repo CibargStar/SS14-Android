@@ -429,7 +429,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     var historyClicks = 0;
                     var clickEvent = output.GetType().GetEvent("OnKeyBindDown")!;
                     var clickArgument = Expression.Parameter(clickEvent.EventHandlerType!.GenericTypeArguments[0]);
-                    Action<object> countClick = value => { if (Get(value, "Function")?.ToString() == "UIClick") historyClicks++; };
+                    Action<object> countClick = value => { if (Get(Get(value, "Function")!, "FunctionName")?.ToString() == "UIClick") historyClicks++; };
                     var clickListener = Expression.Lambda(clickEvent.EventHandlerType, Expression.Invoke(Expression.Constant(countClick), Expression.Convert(clickArgument, typeof(object))), clickArgument).Compile();
                     clickEvent.AddEventHandler(output, clickListener);
                     var point = Vector(Get(output, "GlobalPixelPosition")!) + Vector(Get(output, "PixelSize")!) / 2;

@@ -37,6 +37,7 @@ dotnet run --project tests/EnginePatch.Checks -p:AndroidLauncher=true --   offic
 ```bash
 export SDL_VIDEODRIVER=offscreen EGL_PLATFORM=surfaceless ALSOFT_DRIVERS=null
 export SS14_CHECK_INPUT=1 SS14_CHECK_CAMERA=1 SS14_CHECK_THUMBSTICK=1
+export SS14_CHECK_HUD=1 ROBUST_ANDROID_MOBILE_UI=true
 dotnet run --project tests/OriginalClient.VisualCheck -p:AndroidLauncher=true --   engine.zip SIGNATURE_HEX public.pem SS14.Client.zip native-dir artifacts/visual
 ```
 
@@ -45,6 +46,8 @@ dotnet run --project tests/OriginalClient.VisualCheck -p:AndroidLauncher=true --
 `tests/OriginalClient.Smoke` служит для загрузки модулей и сетевого handshake. `scripts/stage-game-smoke.py` переносит fixture в rooted userdebug-эмулятор; обычному телефону этот способ не нужен и не подходит. Не открывайте приватный игровой Activity наружу ради теста.
 
 В 0.7.0 native-стенд дополнительно проверяет возврат стика в центр, потерянный SDL_UP, отпускание владельца при другом удерживаемом пальце и повторное использование pointer ID. Панель Debug открывается настоящим SDL-нажатием и должна получить измеренные FPS/CPU/память. Launcher-стенд отображает исходный авторизованный хаб с 180 локальными fixture-строками и проверяет вписывание окна и навигации в четыре размера, включая логические размеры S25 Ultra; реальный аккаунт и сеть не используются.
+
+В 0.8.0 `SS14_CHECK_HUD=1` проверяет настоящие серверные ChatBox/MenuButton: мобильную компоновку, native SDL-касания, прокрутку, submit, черновик, восстановление исходного UI при отключении и повторную загрузку экрана. В накладном управлении разрешены только стик и UI; скрытие стика не убирает UI.
 
 ## Runtime probe
 
