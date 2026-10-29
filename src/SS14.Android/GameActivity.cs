@@ -79,20 +79,7 @@ public sealed class GameActivity : SDLActivity
             memory.AvailMem, memory.TotalMem, Environment.ProcessorCount];
     }
 
-    private void ApplyFullscreen()
-    {
-        if (Window is not { } window) return;
-        WindowCompat.SetDecorFitsSystemWindows(window, false);
-        window.AddFlags(WindowManagerFlags.Fullscreen);
-        var controller = WindowCompat.GetInsetsController(window, window.DecorView);
-        controller.SystemBarsBehavior = WindowInsetsControllerCompat.BehaviorShowTransientBarsBySwipe;
-        controller.Hide(WindowInsetsCompat.Type.SystemBars());
-        if (OperatingSystem.IsAndroidVersionAtLeast(28) && window.Attributes is { } attributes)
-        {
-            attributes.LayoutInDisplayCutoutMode = LayoutInDisplayCutoutMode.ShortEdges;
-            window.Attributes = attributes;
-        }
-    }
+    private void ApplyFullscreen() => AndroidFullscreen.Apply(Window);
 
     protected override void OnResume()
     {

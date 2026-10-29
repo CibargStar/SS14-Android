@@ -629,10 +629,12 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     LayoutCheck(Get(dock, "IsLobby") is true && !Descendants(dock).Any(c =>
                         Get(c, "Name")?.ToString() is "MobileChatExpand" or "MobileChatToggle" && Get(c, "VisibleInTree") is true),
                         "lobby chat is static and has no hide/resize actions");
-                    var rootSize = Vector(Get(Get(ui, "RootControl")!, "Size")!);
                     var dockPosition = Vector(Get(dock, "GlobalPosition")!); var dockSize = Vector(Get(dock, "Size")!);
-                    LayoutCheck(dockPosition.X == 0 && Math.Abs(dockSize.X - rootSize.X) < 1 && Math.Abs(dockPosition.Y + dockSize.Y - rootSize.Y) < 1,
-                        "lobby chat fills the bottom edge independently of server navigation");
+                    var serverPanel = FindLayout("MobileLobbyServerScroll");
+                    var serverPosition = Vector(Get(serverPanel, "GlobalPosition")!); var serverSize = Vector(Get(serverPanel, "Size")!);
+                    LayoutCheck(Math.Abs(dockPosition.X - serverPosition.X) < 1 && Math.Abs(dockSize.X - serverSize.X) < 1 &&
+                        Math.Abs(dockPosition.Y - serverPosition.Y - serverSize.Y) < 1,
+                        "static lobby chat continues the right server pane with identical edges and no gap");
                     Inside(FindLayout("MobileLobbyCredits"), "complete credits footer");
                     foreach (var footerName in new[] { "LobbySong", "LobbyBackground" })
                     {

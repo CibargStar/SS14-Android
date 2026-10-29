@@ -14,16 +14,11 @@ on:
         description: Managed runtime for internal compatibility checks
         type: choice
         options: [mono, coreclr]
-        default: mono
-      engine_channel:
-        description: Engine signing channel
-        type: choice
-        options: [temporary, published]
-        default: temporary
+        default: coreclr
       version_code:
         description: Android package version code
         type: string
-        default: '13'
+        default: '14'
 
 permissions:
   contents: read
@@ -33,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SS14_ANDROID_ABI: ${{ inputs.rid == 'android-x64' && 'x86_64' || 'arm64-v8a' }}
-      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '13' }}
+      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '14' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,7 +44,6 @@ jobs:
       - name: Prepare original launcher port
         run: |
           bash scripts/prepare-original-launcher.sh
-          bash scripts/prepare-engine.sh
       - name: Test original launcher, dialogs and persistence
         run: dotnet run --project tests/OriginalLauncher.Tests -p:AndroidLauncher=true -c Debug
       - name: Test phone display sizing and cross-process preferences
@@ -60,26 +54,6 @@ jobs:
         run: dotnet run --project tests/CameraGesture.Checks -c Release
       - name: Test Android physical pointer ownership and release
         run: dotnet run --project tests/AndroidInput.Checks -c Release
-      - name: Build platform-patched engine
-        if: inputs.engine_channel != 'published'
-        run: bash scripts/build-engine.sh
-      - name: Package engine with an ephemeral development signature
-        if: inputs.engine_channel != 'published'
-        run: |
-          mkdir -m 700 .keys
-          openssl genpkey -algorithm ED25519 -out .keys/ci-engine.pem
-          python3 scripts/package-android-engine.py --key .keys/ci-engine.pem --version 294.0.1
-      - name: Bundle engines verified against the stable channel public key
-        if: inputs.engine_channel == 'published'
-        run: >-
-          python3 scripts/fetch-channel-engines.py
-          --catalog https://raw.githubusercontent.com/CibargStar/SS14-Android/updates/engines.json
-          --key updates/android-engine-public.pub
-          --bundle-version 294.0.0 --bundle-version 294.0.1
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ss14-managed-android-engine
-          path: artifacts/engines/
       - uses: actions/cache@v4
         id: native-cache
         with:
@@ -99,8 +73,14 @@ jobs:
           -p:AndroidSdkDirectory="$ANDROID_HOME"
           -p:JavaSdkDirectory="$JAVA_HOME"
           -p:RuntimeIdentifier=${{ inputs.rid || 'android-arm64' }}
-          -p:UseMonoRuntime=${{ inputs.runtime == 'coreclr' && 'false' || 'true' }}
+          -p:UseMonoRuntime=${{ inputs.runtime == 'mono' && 'true' || 'false' }}
           -p:ApplicationVersion="$SS14_APK_VERSION_CODE"
+      - name: Verify bootstrap APK contains no bundled engines
+        if: inputs.runtime != 'mono'
+        run: >-
+          python3 scripts/check-bootstrap-apk.py
+          --apk src/SS14.Android/bin/Debug/net10.0-android/${{ inputs.rid || 'android-arm64' }}/io.ss14.android-Signed.apk
+          --abi "$SS14_ANDROID_ABI"
       - uses: actions/upload-artifact@v4
         with:
           name: ss14-android-development-components

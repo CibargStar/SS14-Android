@@ -63,6 +63,7 @@ public sealed class MainActivity : AvaloniaMainActivity
         LauncherMobile.CheckLauncherUpdate = _updates.CheckLauncherUpdate;
         LauncherMobile.InstallLauncherUpdate = _updates.InstallLauncherUpdate;
         base.OnCreate(savedInstanceState);
+        AndroidFullscreen.Apply(Window);
 #if DEBUG
         LauncherMobile.Root?.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, (_, e) =>
         {
@@ -84,13 +85,25 @@ public sealed class MainActivity : AvaloniaMainActivity
     protected override async void OnResume()
     {
         base.OnResume();
+        AndroidFullscreen.Apply(Window);
+        Window?.DecorView.Post(() => AndroidFullscreen.Apply(Window));
         LauncherMobile.RefreshGameDisplaySettings?.Invoke();
-        try { if (_updates != null) await _updates.ResumePendingInstall(); }
+        try
+        {
+            if (_updates != null) await _updates.ResumePendingInstall();
+            if (LauncherMobile.RefreshLauncherUpdate is { } refresh) await refresh();
+        }
         catch (Exception e)
         {
             global::Android.Util.Log.Error("SS14.Update", e.ToString());
             global::Android.Widget.Toast.MakeText(this, e.Message, global::Android.Widget.ToastLength.Long)!.Show();
         }
+    }
+
+    public override void OnWindowFocusChanged(bool hasFocus)
+    {
+        base.OnWindowFocusChanged(hasFocus);
+        if (hasFocus) AndroidFullscreen.Apply(Window);
     }
 
     protected override void OnStop()

@@ -3192,10 +3192,10 @@ index 0000000..d95f951
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
 new file mode 100644
-index 0000000..3721b25
+index 0000000..c23fd20
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
-@@ -0,0 +1,473 @@
+@@ -0,0 +1,479 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Linq;
@@ -3319,6 +3319,10 @@ index 0000000..3721b25
 +        {
 +            layout.Add(control.VisibleInTree); layout.Add(control.GlobalPosition); layout.Add(control.Size);
 +        }
++        foreach (var lobby in _screens.OfType<MobileLobbyBinding>())
++        {
++            layout.Add(lobby.ChatLayout.Position); layout.Add(lobby.ChatLayout.Size);
++        }
 +        var stamp = layout.ToHashCode();
 +        if (stamp != _layoutStamp) { _layoutStamp = stamp; InvalidateMeasure(); InvalidateArrange(); }
 +    }
@@ -3424,8 +3428,10 @@ index 0000000..3721b25
 +        {
 +            if (chat.Dock.IsLobby)
 +            {
-+                var lobbySize = chat.Dock.DockSize(finalSize);
-+                var bottom = new Vector2(0, MathF.Max(0, finalSize.Y - lobbySize.Y)) - (chat.Dock.Parent?.GlobalPosition ?? Vector2.Zero);
++                var binding = _screens.OfType<MobileLobbyBinding>().FirstOrDefault(s => s.Source == chat.Lobby);
++                var layout = binding?.ChatLayout;
++                var lobbySize = layout?.Size ?? chat.Dock.DockSize(finalSize);
++                var bottom = (layout?.Position ?? new Vector2(finalSize.X - lobbySize.X, finalSize.Y - lobbySize.Y)) - (chat.Dock.Parent?.GlobalPosition ?? Vector2.Zero);
 +                LayoutContainer.SetMarginLeft(chat.Dock, bottom.X); LayoutContainer.SetMarginTop(chat.Dock, bottom.Y);
 +                LayoutContainer.SetMarginRight(chat.Dock, bottom.X + lobbySize.X); LayoutContainer.SetMarginBottom(chat.Dock, bottom.Y + lobbySize.Y);
 +                chat.Dock.Measure(lobbySize); chat.Dock.Arrange(UIBox2.FromDimensions(bottom, lobbySize));
@@ -3671,10 +3677,10 @@ index 0000000..3721b25
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs b/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs
 new file mode 100644
-index 0000000..61c88ca
+index 0000000..c4b36d6
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs
-@@ -0,0 +1,557 @@
+@@ -0,0 +1,569 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Linq;
@@ -3893,6 +3899,8 @@ index 0000000..61c88ca
 +        parent.RemoveChild(split); parent.AddChild(_panel); _panel.SetPositionInParent(index);
 +    }
 +
++    public (Vector2 Position, Vector2 Size) ChatLayout => _panel.ChatLayout;
++
 +    public void Update(Vector2 viewport, float chatHeight)
 +    {
 +        _server?.RefreshPreview();
@@ -3950,6 +3958,16 @@ index 0000000..61c88ca
 +
 +    private void Select(bool server) { _serverSelected = server; InvalidateMeasure(); }
 +
++    public (Vector2 Position, Vector2 Size) ChatLayout
++    {
++        get
++        {
++            var width = Size.X >= 900 && Server.Visible ? Math.Clamp(Size.X * 0.38f, 320, 480) : Size.X;
++            var height = MathF.Min(ChatHeight, Size.Y);
++            return (GlobalPosition + new Vector2(Size.X - width, Size.Y - height), new Vector2(width, height));
++        }
++    }
++
 +    protected override Vector2 MeasureOverride(Vector2 available)
 +    {
 +        var editing = CharacterState?.Visible == true;
@@ -3963,8 +3981,8 @@ index 0000000..61c88ca
 +        _tabs.Measure(new Vector2(available.X, 36));
 +        var right = wide && ServerScroll.Visible ? Math.Clamp(available.X * 0.38f, 320, 480) : 0;
 +        var top = wide ? 0 : 40;
-+        var height = MathF.Max(0, available.Y - top - ChatHeight - 8);
-+        LobbyScroll.Measure(new Vector2(available.X - (right > 0 ? right + 8 : 0), height));
++        var height = MathF.Max(0, available.Y - top - ChatHeight);
++        LobbyScroll.Measure(new Vector2(available.X - (right > 0 ? right + 8 : 0), wide ? MathF.Max(0, available.Y - top) : height));
 +        ServerScroll.Measure(new Vector2(wide ? right : available.X, height));
 +        Editor.Measure(available);
 +        return Vector2.Zero;
@@ -3976,9 +3994,9 @@ index 0000000..61c88ca
 +        var wide = size.X >= 900;
 +        var top = wide ? 0 : 40;
 +        var right = wide && ServerScroll.Visible ? Math.Clamp(size.X * 0.38f, 320, 480) : 0;
-+        var height = MathF.Max(0, size.Y - top - ChatHeight - 8);
++        var height = MathF.Max(0, size.Y - top - ChatHeight);
 +        if (_tabs.Visible) _tabs.Arrange(UIBox2.FromDimensions(Vector2.Zero, new Vector2(size.X, 36)));
-+        if (LobbyScroll.Visible) LobbyScroll.Arrange(UIBox2.FromDimensions(new Vector2(0, top), new Vector2(MathF.Max(0, size.X - (right > 0 ? right + 8 : 0)), height)));
++        if (LobbyScroll.Visible) LobbyScroll.Arrange(UIBox2.FromDimensions(new Vector2(0, top), new Vector2(MathF.Max(0, size.X - (right > 0 ? right + 8 : 0)), wide ? MathF.Max(0, size.Y - top) : height)));
 +        if (ServerScroll.Visible) ServerScroll.Arrange(UIBox2.FromDimensions(new Vector2(wide ? size.X - right : 0, top), new Vector2(wide ? right : size.X, height)));
 +        return size;
 +    }

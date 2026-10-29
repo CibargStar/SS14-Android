@@ -105,7 +105,7 @@ index 214def3..fc89e60 100644
  
      private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
 diff --git a/SS14.Launcher/Assets/Locale/en-US/text.ftl b/SS14.Launcher/Assets/Locale/en-US/text.ftl
-index ad61969..a5cadb3 100644
+index ad61969..8123fac 100644
 --- a/SS14.Launcher/Assets/Locale/en-US/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/en-US/text.ftl
 @@ -34,6 +34,14 @@ connecting-status-update-error =
@@ -123,15 +123,21 @@ index ad61969..a5cadb3 100644
  connecting-status-updating = Updating: { $status }
  connecting-status-connecting = Fetching connection info from server…
  connecting-status-connection-failed = Failed to connect to server!
-@@ -389,3 +397,6 @@ language-selector-language = { $languageName } ({ $englishName })
+@@ -389,3 +397,12 @@ language-selector-language = { $languageName } ({ $englishName })
  
  # Generic "Done!" message used for some buttons.
  button-done = Done!
 +
 +tab-options-android-mobile-ui = Mobile game interface
 +tab-options-android-mobile-ui-desc = Adapt chat, menu, lobby and guidebook to the phone screen. Restart the game to apply. Turn off to use the original server UI.
++
++android-update-title = Launcher update available
++android-update-description = The APK downloads automatically. Install opens the Android confirmation; you can continue using the launcher meanwhile.
++android-update-install = Install update
++android-update-later = Continue
++android-update-downloading = Downloading and verifying launcher update…
 diff --git a/SS14.Launcher/Assets/Locale/ru/text.ftl b/SS14.Launcher/Assets/Locale/ru/text.ftl
-index e81f9f2..227abac 100644
+index e81f9f2..9ca6790 100644
 --- a/SS14.Launcher/Assets/Locale/ru/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/ru/text.ftl
 @@ -547,6 +547,14 @@ server-entry-round-time =
@@ -149,13 +155,19 @@ index e81f9f2..227abac 100644
  server-entry-status-lobby = Лобби
  connecting-status-update-error-no-engine-for-platform = Эта игра использует более старую версию, которая не поддерживается вашей текущей платформой. Попробуйте другой сервер или подключитесь позже.
  connecting-status-update-error-no-module-for-platform = Эта игра требует дополнительного функционала, который пока что не поддерживается вашей текущей платформой. Попробуйте другой сервер или подключитесь позже.
-@@ -568,3 +576,6 @@ main-window-intel-degrade-accept = Я понимаю и принял необх
+@@ -568,3 +576,12 @@ main-window-intel-degrade-accept = Я понимаю и принял необх
  main-window-rosetta-accept = Продолжить
  tab-options-clear-content-close-client = Сперва закройте запущенные клиенты
  button-done = Готово!
 +
 +tab-options-android-mobile-ui = Мобильный интерфейс игры
 +tab-options-android-mobile-ui-desc = Адаптировать чат, меню, лобби и руководство под экран телефона. Применяется при следующем запуске игры. Отключите для исходного интерфейса сервера.
++
++android-update-title = Доступно обновление лаунчера
++android-update-description = APK скачивается автоматически. Кнопка «Установить» откроет подтверждение Android; пока можно продолжить пользоваться лаунчером.
++android-update-install = Установить обновление
++android-update-later = Продолжить
++android-update-downloading = Загрузка и проверка обновления лаунчера…
 diff --git a/SS14.Launcher/Helpers.cs b/SS14.Launcher/Helpers.cs
 index c1293e1..2e324c7 100644
 --- a/SS14.Launcher/Helpers.cs
@@ -246,10 +258,10 @@ index 0000000..7f5669b
 +}
 diff --git a/SS14.Launcher/LauncherMobile.cs b/SS14.Launcher/LauncherMobile.cs
 new file mode 100644
-index 0000000..7fee381
+index 0000000..c6b04b5
 --- /dev/null
 +++ b/SS14.Launcher/LauncherMobile.cs
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,37 @@
 +using System;
 +using System.Collections.Generic;
 +using Avalonia.Controls;
@@ -272,6 +284,7 @@ index 0000000..7fee381
 +    public static Func<string, CancellationToken, Task<Stream>>? OpenEnginePayload { get; set; }
 +    public static string? EnginePublicKeyPath { get; set; }
 +    public static Func<Task<bool>>? CheckLauncherUpdate { get; set; }
++    public static Func<Task>? RefreshLauncherUpdate { get; set; }
 +    public static Func<Task>? InstallLauncherUpdate { get; set; }
 +    public static Func<GameDisplaySettings>? ReadGameDisplaySettings { get; set; }
 +    public static Action<GameDisplaySettings>? WriteGameDisplaySettings { get; set; }
@@ -544,7 +557,7 @@ index 0000000..07cb7b4
 +public sealed record EnginePatchInfo(string SourceUrl, string SourceSha256, string SourceSignature,
 +    string Url, string Sha256, string Signature);
 diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
-index 7b217fd..5e025c4 100644
+index 7b217fd..91ebc85 100644
 --- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
 +++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.Manifest.cs
 @@ -1,4 +1,4 @@
@@ -553,7 +566,37 @@ index 7b217fd..5e025c4 100644
  using System.Collections.Generic;
  using System.Diagnostics;
  using System.Net.Http.Json;
-@@ -69,9 +69,18 @@ public sealed partial class EngineManagerDynamic
+@@ -32,12 +32,13 @@ public sealed partial class EngineManagerDynamic
+     private async ValueTask<FoundVersionInfo?> GetVersionInfo(
+         string version,
+         bool followRedirects = true,
+-        CancellationToken cancel = default)
++        CancellationToken cancel = default,
++        bool forceRefresh = false)
+     {
+         await _manifestSemaphore.WaitAsync(cancel);
+         try
+         {
+-            return await GetVersionInfoCore(version, followRedirects, cancel);
++            return await GetVersionInfoCore(version, followRedirects, cancel, forceRefresh);
+         }
+         finally
+         {
+@@ -48,10 +49,11 @@ public sealed partial class EngineManagerDynamic
+     private async ValueTask<FoundVersionInfo?> GetVersionInfoCore(
+         string version,
+         bool followRedirects,
+-        CancellationToken cancel)
++        CancellationToken cancel,
++        bool forceRefresh)
+     {
+         // If we have a cached copy, and it's not expired, we check it.
+-        if (_cachedRobustVersionInfo != null && _robustCacheValidUntil > _manifestStopwatch.Elapsed)
++        if (!forceRefresh && _cachedRobustVersionInfo != null && _robustCacheValidUntil > _manifestStopwatch.Elapsed)
+         {
+             // Check the version. If this fails, we immediately re-request the manifest as it may have changed.
+             // (Connecting to a freshly-updated server with a new Robust version, within the cache window.)
+@@ -69,9 +71,18 @@ public sealed partial class EngineManagerDynamic
          // TODO: If-Modified-Since and If-None-Match request conditions.
  
          Log.Debug("Loading manifest from {manifestUrl}...", ConfigConstants.RobustBuildsManifest);
@@ -575,7 +618,7 @@ index 7b217fd..5e025c4 100644
  
          _robustCacheValidUntil = _manifestStopwatch.Elapsed + ConfigConstants.RobustManifestCacheTime;
      }
-@@ -85,10 +94,14 @@ public sealed partial class EngineManagerDynamic
+@@ -85,10 +96,14 @@ public sealed partial class EngineManagerDynamic
  
          if (followRedirects)
          {
@@ -591,7 +634,7 @@ index 7b217fd..5e025c4 100644
              }
          }
  
-@@ -113,5 +126,8 @@ public sealed partial class EngineManagerDynamic
+@@ -113,5 +128,8 @@ public sealed partial class EngineManagerDynamic
  
          [JsonInclude] [JsonPropertyName("sig")]
          public string Signature = default!;
@@ -601,7 +644,7 @@ index 7b217fd..5e025c4 100644
      }
  }
 diff --git a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
-index c1e6c78..4d28435 100644
+index c1e6c78..ab97914 100644
 --- a/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 +++ b/SS14.Launcher/Models/EngineManager/EngineManagerDynamic.cs
 @@ -5,6 +5,7 @@ using System.IO.MemoryMappedFiles;
@@ -612,9 +655,12 @@ index c1e6c78..4d28435 100644
  using System.Text.RegularExpressions;
  using System.Threading;
  using System.Threading.Tasks;
-@@ -87,7 +88,12 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+@@ -85,9 +86,14 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+         }
+ #endif
  
-         var foundVersion = await GetVersionInfo(engineVersion, cancel: cancel);
+-        var foundVersion = await GetVersionInfo(engineVersion, cancel: cancel);
++        var foundVersion = await GetVersionInfo(engineVersion, cancel: cancel, forceRefresh: LauncherMobile.OpenEngineManifest != null);
          if (foundVersion == null)
 -            throw new UpdateException("Unable to find engine version in manifest!");
 +        {
@@ -648,7 +694,7 @@ index c1e6c78..4d28435 100644
              throw new NoEngineForPlatformException("No engine version available for our platform!");
          }
  
-@@ -115,31 +119,103 @@ public sealed partial class EngineManagerDynamic : IEngineManager
+@@ -115,31 +119,106 @@ public sealed partial class EngineManagerDynamic : IEngineManager
  
          var buildInfo = foundVersion.Info.Platforms[bestRid];
  
@@ -656,7 +702,10 @@ index c1e6c78..4d28435 100644
 +        if (installed.HasValue && installed.Value.Signature == buildInfo.Signature &&
 +            File.Exists(GetEnginePath(foundVersion.Version)))
 +        {
-+            return new EngineInstallationResult(foundVersion.Version, false);
++            await using var cached = File.OpenRead(GetEnginePath(foundVersion.Version));
++            var hash = await SHA256.HashDataAsync(cached, cancel);
++            if (CryptographicOperations.FixedTimeEquals(hash, Convert.FromHexString(buildInfo.Sha256)))
++                return new EngineInstallationResult(foundVersion.Version, false);
 +        }
 +
 +        // Android platform fixes can change a signed package without changing
@@ -1183,6 +1232,102 @@ index 0000000..b7459d4
 +        return merged;
 +    }
 +}
+diff --git a/SS14.Launcher/Utility/LauncherApkDownload.cs b/SS14.Launcher/Utility/LauncherApkDownload.cs
+new file mode 100644
+index 0000000..e1257f0
+--- /dev/null
++++ b/SS14.Launcher/Utility/LauncherApkDownload.cs
+@@ -0,0 +1,90 @@
++using System;
++using System.IO;
++using System.Net.Http;
++using System.Net.Http.Headers;
++using System.Security.Cryptography;
++using System.Text.Json;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace SS14.Launcher.Utility;
++
++public sealed record LauncherApkRelease(string ApplicationId, long VersionCode, string Url, string Sha256, int MinSdk)
++{
++    public bool IsApplicable(string applicationId, long installedVersion, int sdk)
++    {
++        if (ApplicationId != applicationId) throw new InvalidDataException("APK application ID mismatch.");
++        UpdateCatalogClient.RequireHttps(Url);
++        if (Sha256 == null || Sha256.Length != 64 || Convert.FromHexString(Sha256).Length != 32 || VersionCode < 1 || MinSdk < 1)
++            throw new InvalidDataException("Invalid APK release metadata.");
++        return VersionCode > installedVersion && MinSdk <= sdk;
++    }
++}
++
++public static class UpdateCatalogClient
++{
++    public static void RequireHttps(string address)
++    {
++        var uri = new Uri(address, UriKind.Absolute);
++        if (uri.Scheme != "https" || uri.UserInfo.Length != 0) throw new InvalidDataException("Update sources require HTTPS.");
++    }
++
++    public static async Task<T> GetJson<T>(HttpClient http, string address, CancellationToken cancel = default)
++    {
++        RequireHttps(address);
++        using var request = new HttpRequestMessage(HttpMethod.Get, address);
++        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
++        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
++        response.EnsureSuccessStatusCode();
++        RequireHttps(response.RequestMessage?.RequestUri?.AbsoluteUri ?? address);
++        await using var stream = await response.Content.ReadAsStreamAsync(cancel);
++        return await JsonSerializer.DeserializeAsync<T>(stream, new JsonSerializerOptions(JsonSerializerDefaults.Web), cancel)
++            ?? throw new InvalidDataException("Empty update catalog.");
++    }
++}
++
++// Android supplies package identity/certificate checks; transport remains testable .NET.
++public sealed class LauncherApkDownload(HttpClient http, string directory, Func<string, LauncherApkRelease, Task> verifyIdentity)
++{
++    public async Task Verify(string path, LauncherApkRelease release, CancellationToken cancel = default)
++    {
++        await using var stream = File.OpenRead(path);
++        if (!CryptographicOperations.FixedTimeEquals(await SHA256.HashDataAsync(stream, cancel), Convert.FromHexString(release.Sha256)))
++            throw new CryptographicException("APK hash verification failed.");
++        await verifyIdentity(path, release);
++    }
++
++    public async Task<string> Download(LauncherApkRelease release, CancellationToken cancel = default)
++    {
++        UpdateCatalogClient.RequireHttps(release.Url);
++        Directory.CreateDirectory(directory);
++        var path = Path.Combine(directory, $"ss14-{release.VersionCode}-{release.Sha256.ToLowerInvariant()}.apk");
++        if (File.Exists(path))
++        {
++            try { await Verify(path, release, cancel); return path; }
++            catch (InvalidDataException) { File.Delete(path); }
++            catch (CryptographicException) { File.Delete(path); }
++        }
++        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
++        try
++        {
++            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
++            timeout.CancelAfter(TimeSpan.FromMinutes(15));
++            await using (var input = await http.GetStreamAsync(release.Url, timeout.Token))
++            await using (var output = File.Create(temporary))
++            {
++                var buffer = new byte[64 * 1024];
++                int read;
++                while ((read = await input.ReadAsync(buffer, timeout.Token)) > 0)
++                {
++                    if (output.Length + read > 512L * 1024 * 1024) throw new InvalidDataException("APK exceeds the download limit.");
++                    await output.WriteAsync(buffer.AsMemory(0, read), timeout.Token);
++                }
++            }
++            await Verify(temporary, release, timeout.Token);
++            File.Move(temporary, path, overwrite: true);
++            return path;
++        }
++        finally { if (File.Exists(temporary)) File.Delete(temporary); }
++    }
++}
 diff --git a/SS14.Launcher/Utility/RidUtility.cs b/SS14.Launcher/Utility/RidUtility.cs
 index fdac426..a397ca1 100644
 --- a/SS14.Launcher/Utility/RidUtility.cs
@@ -1408,23 +1553,53 @@ index d61a93a..d7a45bc 100644
          {
              UseShellExecute = true,
 diff --git a/SS14.Launcher/ViewModels/MainWindowViewModel.cs b/SS14.Launcher/ViewModels/MainWindowViewModel.cs
-index 5cf49e1..c17d6cd 100644
+index 5cf49e1..84d94a7 100644
 --- a/SS14.Launcher/ViewModels/MainWindowViewModel.cs
 +++ b/SS14.Launcher/ViewModels/MainWindowViewModel.cs
-@@ -171,6 +171,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+@@ -33,6 +33,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+     private readonly LocalizationManager _loc;
  
+     private int _selectedIndex;
++    private bool _updateSnoozed;
+ 
+     public DataManager Cfg => _cfg;
+     [ObservableProperty] private bool _outOfDate;
+@@ -67,6 +68,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+ #endif
+         };
+ 
++        if (LauncherMobile.DataRoot != null) LauncherMobile.RefreshLauncherUpdate = RefreshLauncherUpdate;
++
+         AccountDropDown = new AccountDropDownViewModel(this);
+         LoginViewModel = new MainWindowLoginViewModel();
+ 
+@@ -169,8 +172,21 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+         Helpers.OpenUri(new Uri(ConfigConstants.WebsiteUrl));
+     }
+ 
++    public string LauncherUpdateTitle => _loc.GetString(LauncherMobile.DataRoot != null ? "android-update-title" : "main-window-out-of-date");
++    public string LauncherUpdateDescription => _loc.GetString(LauncherMobile.DataRoot != null ? "android-update-description" : "main-window-out-of-date-desc");
++    public string LauncherUpdateInstall => _loc.GetString(LauncherMobile.DataRoot != null ? "android-update-install" : "main-window-out-of-date-download-manual");
++    public string LauncherUpdateLater => _loc.GetString(LauncherMobile.DataRoot != null ? "android-update-later" : "main-window-out-of-date-exit");
++
++    public Task RefreshLauncherUpdate() => BusyTask == null ? CheckLauncherUpdate() : Task.CompletedTask;
++
      private async Task CheckLauncherUpdate()
      {
 +        if (LauncherMobile.CheckLauncherUpdate is { } mobileCheck)
 +        {
-+            try { OutOfDate = await mobileCheck(); }
++            try { OutOfDate = await mobileCheck() && !_updateSnoozed; }
 +            catch (Exception e) { Log.Warning(e, "Unable to check Android launcher updates."); }
 +            return;
 +        }
          // await Task.Delay(1000);
          if (!ConfigConstants.DoVersionCheck)
          {
-@@ -203,8 +209,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+@@ -200,11 +216,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IErrorOverlayOw
+ 
+     public void ExitPressed()
+     {
++        if (LauncherMobile.DataRoot != null && OutOfDate) { _updateSnoozed = true; OutOfDate = false; return; }
          Control?.Close();
      }
  
@@ -1433,12 +1608,13 @@ index 5cf49e1..c17d6cd 100644
      {
 +        if (LauncherMobile.InstallLauncherUpdate is { } mobileInstall)
 +        {
-+            try { await mobileInstall(); }
++            try { BusyTask = _loc.GetString("android-update-downloading"); await mobileInstall(); }
 +            catch (Exception e)
 +            {
 +                Log.Error(e, "Unable to install Android launcher update.");
 +                OverlayViewModel = new AuthErrorsOverlayViewModel(this, e.Message, new[] { e.ToString() });
 +            }
++            finally { BusyTask = null; }
 +            return;
 +        }
          Helpers.OpenUri(new Uri(ConfigConstants.DownloadUrl));
@@ -1614,7 +1790,7 @@ index 93a3738..c65b805 100644
      private MainWindowViewModel? _viewModel;
  
 diff --git a/SS14.Launcher/Views/MainWindowContent.xaml b/SS14.Launcher/Views/MainWindowContent.xaml
-index fe18b40..a85e4c0 100644
+index fe18b40..7737457 100644
 --- a/SS14.Launcher/Views/MainWindowContent.xaml
 +++ b/SS14.Launcher/Views/MainWindowContent.xaml
 @@ -1,4 +1,4 @@
@@ -1680,6 +1856,24 @@ index fe18b40..a85e4c0 100644
                                 IsEnabled="{Binding $parent.DataContext.AccountDropDownVisible}"
                                 DataContext="{Binding AccountDropDown}" />
            </Grid>
+@@ -99,13 +115,13 @@
+ 
+     <ContentControl Classes="OverlayBox" IsVisible="{Binding OutOfDate}">
+       <StackPanel Orientation="Vertical">
+-        <TextBlock HorizontalAlignment="Center" Classes="NanoHeadingMedium" Text="{loc:Loc main-window-out-of-date}" />
++        <TextBlock HorizontalAlignment="Center" Classes="NanoHeadingMedium" Text="{Binding LauncherUpdateTitle}" />
+         <TextBlock Margin="0, 10" TextAlignment="Center"
+-                   Text="{loc:Loc main-window-out-of-date-desc}" />
++                   Text="{Binding LauncherUpdateDescription}" TextWrapping="Wrap" MaxWidth="440" />
+         <DockPanel LastChildFill="False">
+-          <Button DockPanel.Dock="Right" Content="{loc:Loc main-window-out-of-date-exit}"
++          <Button DockPanel.Dock="Right" Content="{Binding LauncherUpdateLater}"
+                   Command="{Binding ExitPressed}" />
+-          <Button DockPanel.Dock="Left" Content="{loc:Loc main-window-out-of-date-download-manual}"
++          <Button DockPanel.Dock="Left" Content="{Binding LauncherUpdateInstall}"
+                   Command="{Binding DownloadPressed}" />
+         </DockPanel>
+       </StackPanel>
 diff --git a/SS14.Launcher/Views/MainWindowContent.xaml.cs b/SS14.Launcher/Views/MainWindowContent.xaml.cs
 index bafb5b6..17dd0a6 100644
 --- a/SS14.Launcher/Views/MainWindowContent.xaml.cs
@@ -1938,34 +2132,36 @@ index 47e6715..cbd3878 100644
                Content="{loc:Loc server-entry-connect}"
                Command="{Binding ConnectCommand}" />
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-index 554bf08..ed4329b 100644
+index 554bf08..86c3b4d 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-@@ -14,6 +14,52 @@ public partial class ServerEntryView : UserControl
+@@ -14,6 +14,54 @@ public partial class ServerEntryView : UserControl
      {
          InitializeComponent();
  
 +        if (LauncherMobile.DataRoot != null)
 +        {
 +            // Reflow the original cells and commands; retain the same ViewModel.
-+            EntryHeader.RowDefinitions = new RowDefinitions("Auto,Auto");
++            EntryHeader.RowDefinitions = new RowDefinitions("Auto");
 +            CardBackground.IsVisible = true;
-+            Expando.Margin = new Thickness(5, 2);
-+            EntryHeader.ColumnDefinitions = new ColumnDefinitions("*,36,Auto,100");
-+            EntryHeader.MinHeight = 54;
-+            Grid.SetColumnSpan(ServerNameCell, 3);
-+            Grid.SetRow(ServerStatusCell, 1);
-+            Grid.SetColumn(ServerStatusCell, 0);
-+            Grid.SetColumnSpan(ServerStatusCell, 3);
-+            Grid.SetRow(RoundCell, 1);
-+            Grid.SetColumn(RoundCell, 0);
-+            Grid.SetRow(PlayersCell, 1);
++            Expando.Margin = new Thickness(5, 1);
++            EntryHeader.ColumnDefinitions = new ColumnDefinitions("*,64,76,36,94");
++            EntryHeader.MinHeight = 38;
++            Grid.SetColumnSpan(ServerNameCell, 1);
++            Grid.SetRow(ServerStatusCell, 0);
++            Grid.SetColumn(ServerStatusCell, 1);
++            Grid.SetColumnSpan(ServerStatusCell, 2);
++            Grid.SetRow(RoundCell, 0);
++            Grid.SetColumn(RoundCell, 1);
++            Grid.SetRow(PlayersCell, 0);
 +            Grid.SetColumn(PlayersCell, 2);
-+            Grid.SetRowSpan(ConnectCell, 2);
++            Grid.SetRowSpan(ConnectCell, 1);
++            Grid.SetColumn(ConnectCell, 4);
 +            foreach (var cell in new[] { ServerNameCell, ServerStatusCell, RoundCell, PlayersCell, ConnectCell })
 +            {
 +                cell.BorderThickness = new Thickness(0);
-+                cell.Padding = new Thickness(6, 2);
++                cell.Padding = new Thickness(3, 1);
++                cell.ClipToBounds = true;
 +            }
 +            if (ServerNameCell.Child is TextBlock name)
 +            {
@@ -1986,8 +2182,8 @@ index 554bf08..ed4329b 100644
 +            });
 +            FavoriteButton.MinWidth = FavoriteButton.MinHeight = 32;
 +            FavoriteButton.Padding = new Thickness(5);
-+            Grid.SetRow(FavoriteButton, 1);
-+            Grid.SetColumn(FavoriteButton, 1);
++            Grid.SetRow(FavoriteButton, 0);
++            Grid.SetColumn(FavoriteButton, 3);
 +            EntryHeader.Children.Add(FavoriteButton);
 +            ToolTip.SetTip(FavoriteButton, SS14.Launcher.Localization.LocalizationManager.Instance.GetString("tab-home-favorite-servers"));
 +        }

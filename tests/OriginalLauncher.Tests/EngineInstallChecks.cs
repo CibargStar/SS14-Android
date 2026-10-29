@@ -36,7 +36,8 @@ internal static class EngineInstallChecks
                 { [rid == "win-x64" ? "osx-arm64" : "win-x64"] = new { url = "memory://desktop", sha256 = hash, sig = signature } } }
         });
         var downloads = 0;
-        LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(manifest));
+        var manifestRequests = 0;
+        LauncherMobile.OpenEngineManifest = _ => { manifestRequests++; return Task.FromResult<Stream>(new MemoryStream(manifest)); };
         LauncherMobile.OpenEnginePayload = (_, _) =>
         {
             downloads++;
@@ -46,6 +47,7 @@ internal static class EngineInstallChecks
         check(first.Changed && File.Exists(manager.GetEnginePath("0.0.1001")), "signed engine installed atomically");
         var second = await manager.DownloadEngineIfNecessary("0.0.1001");
         check(!second.Changed && downloads == 1, "installed engine reused without downloading again");
+        check(manifestRequests == 2, "each connection refreshes the catalog while reusing unchanged engine bytes");
         var redirected = await manager.DownloadEngineIfNecessary("obsolete-alias");
         check(redirected.Version == "0.0.1001" && !redirected.Changed && downloads == 1,
             "official redirect from a revoked old binary uses the signed safe target");
@@ -86,6 +88,11 @@ internal static class EngineInstallChecks
             check(result == 2, "Android loader enforces signatures even if desktop debug bypass is set");
         }
         finally { Environment.SetEnvironmentVariable("SS14_DISABLE_SIGNING", previous); }
+        await File.WriteAllBytesAsync(enginePath, "damaged cached engine"u8.ToArray());
+        var beforeRepair = downloads;
+        var cacheRepair = await manager.DownloadEngineIfNecessary("0.0.1001");
+        check(cacheRepair.Changed && downloads == beforeRepair + 1 && File.ReadAllBytes(enginePath).SequenceEqual(payload),
+            "corrupt cached engine is verified and repaired before connection");
         var updatedPayload = "signed Android platform repair"u8.ToArray();
         var updatedSignature = Convert.ToHexString(SignatureAlgorithm.Ed25519.Sign(key, updatedPayload));
         var updatedHash = Convert.ToHexString(SHA256.HashData(updatedPayload));
@@ -93,7 +100,7 @@ internal static class EngineInstallChecks
         { ["0.0.1001"] = Version(digest, updatedSignature) });
         LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(UpdatedManifest(updatedHash)));
         LauncherMobile.OpenEnginePayload = (_, _) => Task.FromResult<Stream>(new MemoryStream(updatedPayload));
-        var repairedManager = new EngineManagerDynamic();
+        var repairedManager = manager;
         var repaired = await repairedManager.DownloadEngineIfNecessary("0.0.1001");
         check(repaired.Changed && File.ReadAllBytes(enginePath).SequenceEqual(updatedPayload) &&
               repairedManager.GetEngineSignature("0.0.1001") == updatedSignature,
@@ -106,11 +113,21 @@ internal static class EngineInstallChecks
         // Advertise a new signed revision, but return the wrong download bytes.
         LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(nextManifest));
         var repairRejected = false;
-        try { await new EngineManagerDynamic().DownloadEngineIfNecessary("0.0.1001"); }
+        try { await repairedManager.DownloadEngineIfNecessary("0.0.1001"); }
         catch (CryptographicException) { repairRejected = true; }
         check(repairRejected && File.ReadAllBytes(enginePath).SequenceEqual(updatedPayload) &&
               repairedManager.GetEngineSignature("0.0.1001") == updatedSignature,
             "corrupt platform repair preserves the working engine and stored signature");
+        LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(
+            new Dictionary<string, object> { ["0.0.1001"] = new { insecure = true, platforms = new { } } })));
+        var revocationRejected = false;
+        try { await manager.DownloadEngineIfNecessary("0.0.1001"); } catch (UpdateException) { revocationRejected = true; }
+        check(revocationRejected && File.ReadAllBytes(enginePath).SequenceEqual(updatedPayload),
+            "new revocation blocks an installed engine in the same launcher session");
+        LauncherMobile.OpenEngineManifest = _ => Task.FromResult<Stream>(new MemoryStream("{}"u8.ToArray()));
+        var removedRejected = false;
+        try { await manager.DownloadEngineIfNecessary("0.0.1001"); } catch (AndroidEngineUnavailableException) { removedRejected = true; }
+        check(removedRejected, "removed catalog version cannot bypass the fresh check through installed cache");
         var cfg = Locator.Current.GetRequiredService<SS14.Launcher.Models.Data.DataManager>();
         cfg.SetCVar(SS14.Launcher.Models.Data.CVars.AndroidEnginePatching, true);
         var originalPayload = "authentic original desktop engine fixture"u8.ToArray();

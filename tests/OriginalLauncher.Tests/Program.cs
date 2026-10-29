@@ -105,6 +105,24 @@ Assert(RidUtility.FindBestRid(["linux-arm64"], "android-arm64") == null, "Androi
 Assert(RidUtility.FindBestRid(["android-arm64", "linux-arm64"], "android-arm64") == "android-arm64", "Android engine RID selected exactly");
 Assert(RidUtility.FindBestRid(["linux-x64"], "linux-x64") == "linux-x64", "desktop RID selection retained");
 EngineCatalogChecks.Run(Assert);
+Task.Run(() => LauncherUpdateChecks.Run(Assert)).GetAwaiter().GetResult();
+var updateChecks = 0;
+var installs = 0;
+LauncherMobile.CheckLauncherUpdate = () => { updateChecks++; return Task.FromResult(true); };
+LauncherMobile.InstallLauncherUpdate = () => { installs++; return Task.CompletedTask; };
+model.BusyTask = null;
+model.RefreshLauncherUpdate().GetAwaiter().GetResult();
+Assert(model.OutOfDate && updateChecks == 1, "launcher startup/resume update check uses the original update overlay");
+Assert(model.LauncherUpdateInstall != "Download (manual)", "Android update action installs inside the application");
+model.DownloadPressed();
+Assert(installs == 1 && model.BusyTask == null, "original update action opens the Android installer and releases busy state");
+model.ExitPressed();
+Assert(!model.OutOfDate, "launcher update can be deferred without closing the hub");
+model.RefreshLauncherUpdate().GetAwaiter().GetResult();
+Assert(!model.OutOfDate && updateChecks == 2, "deferred update is not repeatedly forced in the same session");
+LauncherMobile.CheckLauncherUpdate = null;
+LauncherMobile.InstallLauncherUpdate = null;
+
 var displayPreferences = new SS14.Launcher.Models.GameDisplaySettings();
 LauncherMobile.ReadGameDisplaySettings = () => displayPreferences;
 LauncherMobile.WriteGameDisplaySettings = value => displayPreferences = value.Normalize();
@@ -165,7 +183,7 @@ foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(10
         Assert(connect.Bounds.Left >= name.Bounds.Right - 1 && connect.Bounds.Width > 80,
             "server name and connect action do not overlap");
     }
-    Assert(rows[0].Bounds.Height <= 76, "compact server cards leave more room for the list");
+    Assert(rows[0].Bounds.Height <= 46, "compact server cards leave more room for the list");
     var account = main.GetVisualDescendants().OfType<AccountDropDown>().Single();
     Assert(account.Bounds.Height >= 36, "account menu has the same height as header actions");
     var firstRow = rows[0];
