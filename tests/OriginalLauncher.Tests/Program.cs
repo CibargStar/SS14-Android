@@ -116,6 +116,40 @@ displayPreferences = new SS14.Launcher.Models.GameDisplaySettings(1.25f, true);
 LauncherMobile.RefreshGameDisplaySettings?.Invoke();
 Assert(!model.OptionsTab.GameUiScaleAutomatic && Math.Abs(model.OptionsTab.GameUiScalePercent - 125) < 0.01 &&
        model.OptionsTab.ShowGameControls, "original Options tab refreshes settings changed in game");
+// Render the genuine authenticated hub with local fixture rows, never a live account.
+var logins = Locator.Current.GetRequiredService<SS14.Launcher.Models.Logins.LoginManager>();
+var fixtureLogin = new LoginInfo { UserId = Guid.NewGuid(), Username = "AndroidLayoutTest",
+    Token = new SS14.Launcher.Models.LoginToken("layout-fixture-not-a-real-token", DateTimeOffset.UtcNow.AddDays(1)) };
+logins.AddFreshLogin(fixtureLogin);
+logins.ActiveAccountId = fixtureLogin.UserId;
+model.SelectedIndex = 1;
+Dispatcher.UIThread.RunJobs();
+var serverCache = Locator.Current.GetRequiredService<SS14.Launcher.Models.ServerStatus.ServerListCache>();
+serverCache.Status = SS14.Launcher.Models.ServerStatus.RefreshListStatus.Updated;
+for (var index = 0; index < 180; index++)
+    serverCache.AllServers.Add(new SS14.Launcher.Models.ServerStatus.ServerStatusData($"ss14://layout-{index}.invalid:1212")
+    {
+        Name = $"Server {index + 1} — original SS14 hub layout",
+        Status = SS14.Launcher.Models.ServerStatus.ServerStatusCode.Online,
+        PlayerCount = index % 100, SoftMaxPlayerCount = 100
+    });
+Dispatcher.UIThread.RunJobs();
+Assert(model.LoggedIn && model.ServersTab.SearchedServers.Count > 0, "original authenticated hub displays local fixture servers");
+foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(1040, 480), new Size(960, 540) })
+{
+    host.Width = size.Width;
+    host.Height = size.Height;
+    Dispatcher.UIThread.RunJobs();
+    using var hubFrame = host.CaptureRenderedFrame();
+    hubFrame!.Save($"artifacts/launcher-hub-fit-{size.Width}x{size.Height}.png");
+    var tabs = main.GetVisualDescendants().OfType<TabControl>().Single();
+    var bottom = main.TranslatePoint(new Point(main.Bounds.Width, main.Bounds.Height), grid)!.Value;
+    Assert(bottom.X <= size.Width + 1 && bottom.Y <= size.Height + 1 && tabs.Bounds.Height > 200,
+        $"original hub and navigation fit complete phone viewport at {size}");
+    Assert(grid.Children.All(child => child is not ScrollViewer), "hub has no outer scrolling container");
+}
+logins.ActiveAccountId = null;
+Locator.Current.GetRequiredService<DataManager>().RemoveLogin(fixtureLogin);
 host.Close();
 Task.Run(() => EngineInstallChecks.Run(
     Locator.Current.GetRequiredService<SS14.Launcher.Models.EngineManager.IEngineManager>(), Assert))

@@ -9,6 +9,7 @@ dotnet run --project tests/OriginalLauncher.Tests -p:AndroidLauncher=true -c Deb
 dotnet run --project tests/AndroidDisplay.Checks -c Release
 dotnet run --project tests/Thumbstick.Checks -c Release
 dotnet run --project tests/CameraGesture.Checks -c Release
+dotnet run --project tests/AndroidInput.Checks -c Release
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -18,6 +19,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 | AndroidDisplay.Checks | Расчёт масштаба, размеры экранов и общее хранилище launcher/game |
 | Thumbstick.Checks | Один владелец, мёртвая зона, устойчивость направлений, отпускание, движение относительно камеры |
 | CameraGesture.Checks | Щипок/поворот, пороги, UI/world arbitration, отмена и обычные нажатия/перетаскивание |
+| AndroidInput.Checks | Соответствие Android pointer ID и SDL finger ID, несколько пальцев, отпускание и отмена |
 | test_update_catalog.py | Официальные redirect, отозванные цели, циклы и формирование безопасного каталога |
 
 Для готовой бинарной дельты:
@@ -41,6 +43,8 @@ dotnet run --project tests/OriginalClient.VisualCheck -p:AndroidLauncher=true --
 События отправляются через native `SDL_PushEvent` и проходят штатный SDL event watch → Clyde → GameController → UI/InputManager. Проверяются стик (down/motion/up), настоящая кнопка Options, масштаб проекции, вращение, обратное преобразование выбора, сохранение серверного Eye/FOV, отсутствие случайного клика и обычный tap. Тестовая карта/eye создаются только внутри fixture. Прямой вызов UI.TouchFinger не подходит: он скрывает отсутствие подписки на события, которое вызвало регрессию 0.6.0.
 
 `tests/OriginalClient.Smoke` служит для загрузки модулей и сетевого handshake. `scripts/stage-game-smoke.py` переносит fixture в rooted userdebug-эмулятор; обычному телефону этот способ не нужен и не подходит. Не открывайте приватный игровой Activity наружу ради теста.
+
+В 0.7.0 native-стенд дополнительно проверяет возврат стика в центр, потерянный SDL_UP, отпускание владельца при другом удерживаемом пальце и повторное использование pointer ID. Панель Debug открывается настоящим SDL-нажатием и должна получить измеренные FPS/CPU/память. Launcher-стенд отображает исходный авторизованный хаб с 180 локальными fixture-строками и проверяет вписывание окна и навигации в четыре размера, включая логические размеры S25 Ultra; реальный аккаунт и сеть не используются.
 
 ## Runtime probe
 
