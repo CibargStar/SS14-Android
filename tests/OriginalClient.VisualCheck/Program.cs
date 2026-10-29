@@ -76,7 +76,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     var root = Get(ui, "RootControl")!;
                     var overlay = Get(ui, "MobileOverlay")!;
                     var boxes = Descendants(overlay)
-                        .Where(c => c.GetType().Name is "PojavActionButton" or "VirtualThumbstick")
+                        .Where(c => c.GetType().Name is "PojavActionButton" or "VirtualThumbstick" || Get(c, "Name")?.ToString() == "MobileDisplayButton")
                         .Where(c => Get(c, "VisibleInTree") is true)
                         .Select(c => new { type = c.GetType().Name, text = Get(c, "Text")?.ToString(),
                             x = Number(Get(c, "GlobalPixelPosition")!, "X"),
@@ -94,7 +94,9 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                             MathF.Min(boxes[a].y + boxes[a].h, boxes[b].y + boxes[b].h) - MathF.Max(boxes[a].y, boxes[b].y) > 1)
                             throw new Exception("Overlapping touch controls: " + boxes[a].text + "/" + boxes[b].text);
                     if (name == "controls-hidden" && (boxes.Length != 1 || boxes[0].text != "UI"))
-                        throw new Exception("Hidden controls remain interactive or the restore button is missing.");
+                        throw new Exception("Hidden stick remains interactive or UI button is missing.");
+                    if (boxes.Any(box => box.type != "VirtualThumbstick" && box.text != "UI"))
+                        throw new Exception("Removed touch action buttons remain in the overlay.");
                     if (name == "display-settings")
                     {
                         var dialog = Descendants(root).Single(c => c.GetType().Name == "MobileDisplaySettingsWindow");
@@ -343,7 +345,138 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     return true;
                 });
             }
-            await OnMain(() => { overlay.GetType().GetMethod("OpenDisplaySettings")!.Invoke(overlay, null); return true; });
+            if (Environment.GetEnvironmentVariable("SS14_CHECK_HUD") == "1")
+            {
+                void HudCheck(bool success, string name)
+                {
+                    if (!success) throw new Exception("Mobile HUD integration: " + name);
+                    Console.WriteLine("HUD PASS " + name);
+                }
+                object HudFind(string name) => Descendants(Get(ui, "RootControl")!).Single(c => Get(c, "Name")?.ToString() == name);
+                void HudTap(object control)
+                {
+                    var point = Vector(Get(control, "GlobalPixelPosition")!) + Vector(Get(control, "PixelSize")!) / 2;
+                    RawTouch("Down", 970, point); RawTouch("Up", 970, point);
+                }
+                object? originalScreen = null;
+                object? originalChat = null;
+                object? originalPanel = null;
+                object? originalInput = null;
+                object? originalBar = null;
+                object? firstButton = null;
+                await OnMain(() =>
+                {
+                    Get(ui, "StateRoot")!.GetType().GetProperty("Visible")!.SetValue(Get(ui, "StateRoot"), false);
+                    ui.GetType().GetMethod("LoadScreen")!.MakeGenericMethod(loaded.LoadedAssembly.GetType("Content.Client.UserInterface.Screens.DefaultGameScreen", true)!).Invoke(ui, null);
+                    originalScreen = Get(ui, "ActiveScreen")!;
+                    originalChat = Get(originalScreen, "ChatBox")!;
+                    originalPanel = Get(originalChat, "ChatWindowPanel")!;
+                    originalInput = Get(Get(originalChat, "ChatInput")!, "Input")!;
+                    originalBar = Descendants(originalScreen).Single(c => c.GetType().Name == "GameTopMenuBar");
+                    firstButton = Descendants(originalBar).First(c => c.GetType().Name == "MenuButton");
+                    var addLine = originalChat.GetType().GetMethod("AddLine")!;
+                    var color = addLine.GetParameters()[1].ParameterType.GetProperty("White")!.GetValue(null);
+                    for (var i = 0; i < 70; i++) addLine.Invoke(originalChat, [$"{i:00} Local: Тест мобильного чата — upstream channels, history and filters.", color]);
+                    return true;
+                });
+                await Task.Delay(1000);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(originalChat!, "Visible") is false && ReferenceEquals(Get(originalChat!, "ChatWindowPanel"), originalPanel), "server chat is replaced using its original panel instance");
+                    HudCheck(Descendants(HudFind("MobileChatDock")).Contains(originalPanel!), "original messages, channels and filters are mounted in mobile dock");
+                    HudCheck(ReferenceEquals(Get(originalScreen!, "ChatBox"), originalChat), "original screen/controller ChatBox lookup is retained");
+                    var labels = Descendants(firstButton!).Where(c => c.GetType().Name == "Label").ToArray();
+                    HudCheck(labels.Length > 0 && labels.All(c => Get(c, "Visible") is false), "menu keeps original icons and hides all keyboard legends");
+                    HudCheck(Descendants(originalBar!).Contains(firstButton!), "menu retains the original action button instance");
+                    return true;
+                });
+                await Capture("mobile-hud-compact");
+                await OnMain(() => { HudTap(HudFind("MobileMenuToggle")); return true; });
+                await Task.Delay(250);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(HudFind("MobileMenuStrip"), "Collapsed") is true && Get(HudFind("MobileMenuIcons"), "VisibleInTree") is false, "native SDL tap collapses original action strip");
+                    HudTap(HudFind("MobileMenuToggle"));
+                    originalInput!.GetType().GetProperty("Text")!.SetValue(originalInput, "draft ; original channel");
+                    HudTap(HudFind("MobileChatToggle"));
+                    return true;
+                });
+                await Task.Delay(300);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(HudFind("MobileChatDock"), "Collapsed") is true && Get(originalPanel!, "VisibleInTree") is false, "chat collapses to its restore icon");
+                    HudTap(HudFind("MobileChatToggle"));
+                    return true;
+                });
+                await Task.Delay(300);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(originalInput!, "Text")?.ToString() == "draft ; original channel", "collapsing chat preserves the original draft");
+                    HudTap(HudFind("MobileChatExpand"));
+                    return true;
+                });
+                await Task.Delay(300);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(HudFind("MobileChatDock"), "Expanded") is true && Number(HudFind("MobileChatDock"), "Height") > 250, "chat expands within phone viewport");
+                    var output = Descendants(originalPanel!).Single(c => c.GetType().Name == "OutputPanel");
+                    var scrollbar = Descendants(output).Single(c => c.GetType().Name == "VScrollBar");
+                    var before = Number(scrollbar, "Value");
+                    var point = Vector(Get(output, "GlobalPixelPosition")!) + Vector(Get(output, "PixelSize")!) / 2;
+                    RawTouch("Down", 980, point); RawTouch("Motion", 980, point + new Vector2(0, 90)); RawTouch("Up", 980, point + new Vector2(0, 90));
+                    HudCheck(Number(scrollbar, "Value") < before, "one-finger swipe scrolls original chat history");
+                    // Whitespace exercises original submit/history/channel handlers
+                    // without sending a fixture message to any server.
+                    originalInput!.GetType().GetProperty("Text")!.SetValue(originalInput, " ");
+                    HudTap(HudFind("MobileChatSend"));
+                    HudCheck(Get(originalInput, "Text")?.ToString() == "", "send icon invokes original input submit and chat handler");
+                    return true;
+                });
+                await OnMain(() =>
+                {
+                    var dock = HudFind("MobileChatDock");
+                    var p = Vector(Get(dock, "GlobalPixelPosition")!); var size = Vector(Get(dock, "PixelSize")!);
+                    var buttons = Descendants(overlay).Where(c => c.GetType().Name == "VirtualThumbstick" && Get(c, "VisibleInTree") is true);
+                    HudCheck(buttons.All(c =>
+                    {
+                        var q = Vector(Get(c, "GlobalPixelPosition")!); var s = Vector(Get(c, "PixelSize")!);
+                        return MathF.Min(p.X + size.X, q.X + s.X) <= MathF.Max(p.X, q.X) || MathF.Min(p.Y + size.Y, q.Y + s.Y) <= MathF.Max(p.Y, q.Y);
+                    }), "only movement stick and UI remain; expanded chat does not overlap movement");
+                    return true;
+                });
+                await Capture("mobile-hud-expanded");
+                await OnMain(() => { Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "false"); return true; });
+                await Task.Delay(300);
+                await OnMain(() =>
+                {
+                    HudCheck(!Descendants(Get(ui, "RootControl")!).Any(c => c.GetType().Name == "MobileServerUiAdapter"), "opt-out removes all mobile HUD presentation");
+                    HudCheck(Get(originalChat!, "Visible") is true && ReferenceEquals(Get(originalPanel!, "Parent"), originalChat), "opt-out restores original server chat ownership and visibility");
+                    HudCheck(ReferenceEquals(Get(firstButton!, "Parent"), originalBar) && Descendants(firstButton!).Where(c => c.GetType().Name == "Label").All(c => Get(c, "Visible") is true), "opt-out restores original menu layout and keyboard legends");
+                    Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "true");
+                    return true;
+                });
+                await Task.Delay(400);
+                await OnMain(() =>
+                {
+                    HudCheck(Descendants(Get(ui, "RootControl")!).Count(c => Get(c, "Name")?.ToString() == "MobileChatSend") == 1, "re-enabling creates one send action without duplicate controls");
+                    ui.GetType().GetMethod("UnloadScreen")!.Invoke(ui, null);
+                    return true;
+                });
+                await Task.Delay(300);
+                await OnMain(() =>
+                {
+                    HudCheck(ReferenceEquals(Get(originalPanel!, "Parent"), originalChat) && ReferenceEquals(Get(firstButton!, "Parent"), originalBar), "screen unload restores widgets for subsequent original screen reload");
+                    Get(ui, "StateRoot")!.GetType().GetProperty("Visible")!.SetValue(Get(ui, "StateRoot"), true);
+                    return true;
+                });
+            }
+            await OnMain(() =>
+            {
+                var button = Descendants(overlay).Single(c => Get(c, "Name")?.ToString() == "MobileDisplayButton");
+                var point = Vector(Get(button, "GlobalPixelPosition")!) + Vector(Get(button, "PixelSize")!) / 2;
+                RawTouch("Down", 990, point); RawTouch("Up", 990, point);
+                return true;
+            });
             await Capture("display-settings");
             await OnMain(() =>
             {

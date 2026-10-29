@@ -60,26 +60,8 @@ already_applied = subprocess.run(['git', '-C', str(destination), 'apply', '--rev
 if not already_applied:
     git(destination, 'apply', '--check', str(patch))
     git(destination, 'apply', str(patch))
-# Before the upstream AltGr input addition, the original event constructor has
-# eight arguments. Preserve that API on those exact versions; do not transplant
-# a newer input event type into their network/content API.
-events = (destination / 'Robust.Client/Input/Events.cs').read_text()
-if 'public bool AltGr' not in events:
-    input_path = destination / 'Robust.Client/Input/InputManager.cs'
-    original = input_path.read_text()
-    needle = ', args.RawCode, args.AltGr)'
-    if original.count(needle) == 2:
-        input_path.write_text(original.replace(needle, ', args.RawCode)'))
-    elif original.count(', args.ScanCode, args.RawCode)') != 2 and original.count(', args.ScanCode)') != 2:
-        raise SystemExit('Unrecognized legacy input API; manual port review is required.')
-if 'RawCode' not in events:
-    input_path = destination / 'Robust.Client/Input/InputManager.cs'
-    original = input_path.read_text()
-    needle = ', args.RawCode)'
-    if original.count(needle) == 2:
-        input_path.write_text(original.replace(needle, ')'))
-    elif original.count(', args.ScanCode)') != 2:
-        raise SystemExit('Unrecognized oldest input API; manual port review is required.')
+# InputManager keeps the original event constructors; the removed action
+# overlay no longer synthesizes cross-version mouse/modifier events.
 # Keep the original protocol/API while applying the same ImageSharp security
 # patch level used by the latest upstream engine. Do not disable NuGet auditing.
 packages = destination / 'Directory.Packages.props'

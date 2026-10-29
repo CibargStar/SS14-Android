@@ -108,7 +108,7 @@ index 214def3..5063d0a 100644
  
      private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
 diff --git a/SS14.Launcher/Assets/Locale/en-US/text.ftl b/SS14.Launcher/Assets/Locale/en-US/text.ftl
-index ad61969..106bd88 100644
+index ad61969..62d87d3 100644
 --- a/SS14.Launcher/Assets/Locale/en-US/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/en-US/text.ftl
 @@ -34,6 +34,14 @@ connecting-status-update-error =
@@ -118,7 +118,7 @@ index ad61969..106bd88 100644
 +tab-options-android-display-title = In-game display and controls
 +tab-options-android-game-scale-auto = Automatic game interface scale
 +tab-options-android-game-scale-value = Game interface scale: { $percent }%
-+tab-options-android-show-controls = Show touch controls
++tab-options-android-show-controls = Show movement stick
 +tab-options-android-display-desc = Automatic scale fits the interface to your screen. These settings are also available through the in-game UI button. Image proportions and world object sizes stay the same.
 +tab-options-android-engine-patching = Experimental engine patching
 +tab-options-android-engine-patching-desc = For versions with a prepared patch, download the original engine and adapt it on this device. Source, patch and output signatures are verified. Downloads can be larger. Other versions use normal installation.
@@ -126,8 +126,15 @@ index ad61969..106bd88 100644
  connecting-status-updating = Updating: { $status }
  connecting-status-connecting = Fetching connection info from server…
  connecting-status-connection-failed = Failed to connect to server!
+@@ -389,3 +397,6 @@ language-selector-language = { $languageName } ({ $englishName })
+ 
+ # Generic "Done!" message used for some buttons.
+ button-done = Done!
++
++tab-options-android-mobile-ui = Mobile chat and icon menu
++tab-options-android-mobile-ui-desc = Replace the server chat/menu layout with the Android layout. Restart the game to apply. Turn off to use the original server UI.
 diff --git a/SS14.Launcher/Assets/Locale/ru/text.ftl b/SS14.Launcher/Assets/Locale/ru/text.ftl
-index e81f9f2..b47ed17 100644
+index e81f9f2..e5bf3db 100644
 --- a/SS14.Launcher/Assets/Locale/ru/text.ftl
 +++ b/SS14.Launcher/Assets/Locale/ru/text.ftl
 @@ -547,6 +547,14 @@ server-entry-round-time =
@@ -137,7 +144,7 @@ index e81f9f2..b47ed17 100644
 +tab-options-android-display-title = Экран и управление в игре
 +tab-options-android-game-scale-auto = Автоматический масштаб интерфейса игры
 +tab-options-android-game-scale-value = Масштаб интерфейса игры: { $percent }%
-+tab-options-android-show-controls = Показывать сенсорные кнопки управления
++tab-options-android-show-controls = Показывать стик движения
 +tab-options-android-display-desc = Автоматический масштаб подбирается по размеру экрана. Настройки также доступны в игре по кнопке UI. Пропорции изображения и размер игровых объектов не меняются.
 +tab-options-android-engine-patching = Экспериментальный автопатч движка
 +tab-options-android-engine-patching-desc = Для версий с подготовленным патчем скачивает оригинальный движок и адаптирует его на устройстве. Подписи исходника, патча и результата проверяются. Загрузка может быть больше обычной. Остальные версии устанавливаются обычным способом.
@@ -145,6 +152,13 @@ index e81f9f2..b47ed17 100644
  server-entry-status-lobby = Лобби
  connecting-status-update-error-no-engine-for-platform = Эта игра использует более старую версию, которая не поддерживается вашей текущей платформой. Попробуйте другой сервер или подключитесь позже.
  connecting-status-update-error-no-module-for-platform = Эта игра требует дополнительного функционала, который пока что не поддерживается вашей текущей платформой. Попробуйте другой сервер или подключитесь позже.
+@@ -568,3 +576,6 @@ main-window-intel-degrade-accept = Я понимаю и принял необх
+ main-window-rosetta-accept = Продолжить
+ tab-options-clear-content-close-client = Сперва закройте запущенные клиенты
+ button-done = Готово!
++
++tab-options-android-mobile-ui = Мобильный чат и панель меню
++tab-options-android-mobile-ui-desc = Заменять компоновку чата и меню сервера мобильной. Применяется при следующем запуске игры. Отключите для исходного интерфейса сервера.
 diff --git a/SS14.Launcher/Helpers.cs b/SS14.Launcher/Helpers.cs
 index c1293e1..2e324c7 100644
 --- a/SS14.Launcher/Helpers.cs
@@ -715,7 +729,7 @@ index c1e6c78..4d28435 100644
          string moduleVersion,
 diff --git a/SS14.Launcher/Models/GameDisplaySettings.cs b/SS14.Launcher/Models/GameDisplaySettings.cs
 new file mode 100644
-index 0000000..2083ee8
+index 0000000..69dde9a
 --- /dev/null
 +++ b/SS14.Launcher/Models/GameDisplaySettings.cs
 @@ -0,0 +1,11 @@
@@ -723,7 +737,7 @@ index 0000000..2083ee8
 +
 +namespace SS14.Launcher.Models;
 +
-+public sealed record GameDisplaySettings(float UiScale = 0, bool ShowControls = true)
++public sealed record GameDisplaySettings(float UiScale = 0, bool ShowControls = true, bool MobileUi = true)
 +{
 +    public GameDisplaySettings Normalize() => this with
 +    {
@@ -1223,7 +1237,7 @@ index ca2cbe4..f590547 100644
      }
  
 diff --git a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
-index d61a93a..df79691 100644
+index d61a93a..d7a45bc 100644
 --- a/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
 +++ b/SS14.Launcher/ViewModels/MainWindowTabs/OptionsTabViewModel.cs
 @@ -3,6 +3,7 @@ using System.Diagnostics;
@@ -1234,7 +1248,7 @@ index d61a93a..df79691 100644
  using SS14.Launcher.Models.ContentManagement;
  using SS14.Launcher.Models.Data;
  using SS14.Launcher.Models.EngineManager;
-@@ -25,8 +26,56 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+@@ -25,8 +26,62 @@ public class OptionsTabViewModel : MainWindowTabViewModel
          _contentManager = Locator.Current.GetRequiredService<ContentManager>();
  
          DisableIncompatibleMacOS = OperatingSystem.IsMacOS();
@@ -1271,12 +1285,18 @@ index d61a93a..df79691 100644
 +        get => DisplaySettings.ShowControls;
 +        set => LauncherMobile.WriteGameDisplaySettings?.Invoke(DisplaySettings with { ShowControls = value });
 +    }
++    public bool UseMobileGameUi
++    {
++        get => DisplaySettings.MobileUi;
++        set => LauncherMobile.WriteGameDisplaySettings?.Invoke(DisplaySettings with { MobileUi = value });
++    }
 +    public void RefreshGameDisplaySettings()
 +    {
 +        OnPropertyChanged(nameof(GameUiScaleAutomatic));
 +        OnPropertyChanged(nameof(GameUiScalePercent));
 +        OnPropertyChanged(nameof(GameUiScaleLabel));
 +        OnPropertyChanged(nameof(ShowGameControls));
++        OnPropertyChanged(nameof(UseMobileGameUi));
 +    }
 +
 +    public bool AndroidEnginePatching
@@ -1291,7 +1311,7 @@ index d61a93a..df79691 100644
  
      public override string Name => LocalizationManager.Instance.GetString("tab-options-title");
  
-@@ -72,6 +121,11 @@ public class OptionsTabViewModel : MainWindowTabViewModel
+@@ -72,6 +127,11 @@ public class OptionsTabViewModel : MainWindowTabViewModel
  
      public void OpenLogDirectory()
      {
@@ -1493,15 +1513,17 @@ index c2427a4..e6111d7 100644
              Log.Error("Visual root isn't a window!");
              return;
 diff --git a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
-index 59e1c12..dd837a5 100644
+index 59e1c12..9b56b8a 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
 +++ b/SS14.Launcher/Views/MainWindowTabs/OptionsTabView.xaml
-@@ -23,6 +23,20 @@
+@@ -23,6 +23,22 @@
                Command="{Binding OpenLogDirectory}"/>
  
        <StackPanel Orientation="Vertical">
 +        <StackPanel IsVisible="{Binding IsAndroid}" Margin="8" Spacing="8">
 +          <TextBlock Text="{loc:Loc tab-options-android-display-title}" FontWeight="Bold" />
++          <CheckBox Content="{loc:Loc tab-options-android-mobile-ui}" IsChecked="{Binding UseMobileGameUi}" />
++          <TextBlock Text="{loc:Loc tab-options-android-mobile-ui-desc}" TextWrapping="Wrap" />
 +          <CheckBox Content="{loc:Loc tab-options-android-game-scale-auto}" IsChecked="{Binding GameUiScaleAutomatic}" />
 +          <TextBlock Text="{Binding GameUiScaleLabel}" />
 +          <Slider Minimum="25" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True"

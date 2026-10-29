@@ -14,26 +14,26 @@ index f67e982..26ac1c6 100644
          <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
 diff --git a/Resources/Locale/en-US/mobile-display.ftl b/Resources/Locale/en-US/mobile-display.ftl
 new file mode 100644
-index 0000000..0273f47
+index 0000000..a4e7507
 --- /dev/null
 +++ b/Resources/Locale/en-US/mobile-display.ftl
 @@ -0,0 +1,6 @@
 +mobile-display-title = Display and touch controls
 +mobile-display-auto = Automatic interface scale
 +mobile-display-scale = Interface scale: { $percent }%
-+mobile-display-controls = Show touch controls
++mobile-display-controls = Show movement stick
 +mobile-display-reset = Reset display settings
 +mobile-display-apply = Apply
 diff --git a/Resources/Locale/ru-RU/mobile-display.ftl b/Resources/Locale/ru-RU/mobile-display.ftl
 new file mode 100644
-index 0000000..c0a3606
+index 0000000..72f1eea
 --- /dev/null
 +++ b/Resources/Locale/ru-RU/mobile-display.ftl
 @@ -0,0 +1,6 @@
 +mobile-display-title = Экран и сенсорное управление
 +mobile-display-auto = Автоматический масштаб интерфейса
 +mobile-display-scale = Масштаб интерфейса: { $percent }%
-+mobile-display-controls = Показывать сенсорные кнопки
++mobile-display-controls = Показывать стик движения
 +mobile-display-reset = Сбросить настройки экрана
 +mobile-display-apply = Применить
 diff --git a/Resources/Shaders/Internal/fov-lighting.swsl b/Resources/Shaders/Internal/fov-lighting.swsl
@@ -967,53 +967,10 @@ index 388522f..6d889cf 100644
          event Action<WindowDestroyedEventArgs> DestroyWindow;
  
 diff --git a/Robust.Client/Input/InputManager.cs b/Robust.Client/Input/InputManager.cs
-index e689fb1..0e31a90 100644
+index 2ed826b..0fc8532 100644
 --- a/Robust.Client/Input/InputManager.cs
 +++ b/Robust.Client/Input/InputManager.cs
-@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
- using System.Text;
- using JetBrains.Annotations;
- using Robust.Client.UserInterface;
-+using Robust.Client.UserInterface.Mobile;
- using Robust.Shared.Collections;
- using Robust.Shared.Console;
- using Robust.Shared.ContentPack;
-@@ -229,6 +230,34 @@ namespace Robust.Client.Input
-                 return;
-             }
- 
-+            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsSecondaryActive && args.Key == Key.MouseLeft)
-+            {
-+                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
-+                if (!isUI)
-+                {
-+                    args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode);
-+                    MobileControlsOverlay.ResetSecondaryMode();
-+                }
-+            }
-+
-+            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsExamActive && args.Key == Key.MouseLeft)
-+            {
-+                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
-+                if (!isUI)
-+                {
-+                    MobileControlsOverlay.ResetExamMode();
-+                }
-+            }
-+
-+            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsPullActive && args.Key == Key.MouseLeft)
-+            {
-+                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
-+                if (!isUI)
-+                {
-+                    MobileControlsOverlay.ResetPullMode();
-+                }
-+            }
-+
-             _keysPressed[(int)args.Key] = true;
- 
-             PackedKeyCombo matchedCombo = default;
-@@ -261,9 +290,13 @@ namespace Robust.Client.Input
+@@ -267,9 +267,13 @@ namespace Robust.Client.Input
                      }
                      else if (PackedIsSubPattern(matchedCombo, binding.PackedKeyCombo))
                      {
@@ -1028,18 +985,6 @@ index e689fb1..0e31a90 100644
                          }
                          else
                          {
-@@ -321,6 +354,11 @@ namespace Robust.Client.Input
-                 return;
-             }
- 
-+            if (OperatingSystem.IsAndroid() && args.Key == Key.MouseLeft && _keysPressed[(int)Key.MouseRight] && !_keysPressed[(int)Key.MouseLeft])
-+            {
-+                args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode);
-+            }
-+
-             FirstChanceOnKeyEvent?.Invoke(args, KeyEventType.Up);
- 
-             var hasCanFocus = false;
 diff --git a/Robust.Client/Input/TouchFingerEventArgs.cs b/Robust.Client/Input/TouchFingerEventArgs.cs
 new file mode 100644
 index 0000000..d781dab
@@ -1438,7 +1383,6 @@ index 0000000..b201cff
 +
 +    private static bool Valid(Vector2 value) => float.IsFinite(value.X) && float.IsFinite(value.Y);
 +}
-
 diff --git a/Robust.Client/UserInterface/Mobile/MobileCameraTransform.cs b/Robust.Client/UserInterface/Mobile/MobileCameraTransform.cs
 new file mode 100644
 index 0000000..1d00f75
@@ -1503,682 +1447,97 @@ index 0000000..1d00f75
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
 new file mode 100644
-index 0000000..db2d937
+index 0000000..9eed978
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
-@@ -0,0 +1,1211 @@
+@@ -0,0 +1,125 @@
 +using System;
 +using System.Collections.Generic;
-+using System.Globalization;
-+using System.IO;
 +using System.Numerics;
 +using Robust.Client.Graphics;
 +using Robust.Client.Input;
-+using Robust.Client.UserInterface;
 +using Robust.Client.UserInterface.Controls;
-+using Robust.Client.UserInterface.CustomControls;
 +using Robust.Shared;
 +using Robust.Shared.Configuration;
-+using Robust.Shared.Input;
 +using Robust.Shared.IoC;
-+using Robust.Shared.Map;
++using Robust.Shared.Localization;
 +using Robust.Shared.Maths;
 +using Robust.Shared.Timing;
 +
-+
 +namespace Robust.Client.UserInterface.Mobile;
 +
-+public sealed partial class MobileControlsOverlay : Control
++// Only movement belongs to the touch overlay. Actions remain in the real HUD.
++public sealed class MobileControlsOverlay : Control
 +{
-+    public bool BlocksWorldGestures => _modalOverlay.Visible || IsEditMode;
 +    [Dependency] private IConfigurationManager _cfg = default!;
 +    [Dependency] private IUserInterfaceManagerInternal _uiMgr = default!;
-+    [Dependency] private IClyde _clyde = default!;
-+
-+
-+    public static bool IsEditMode { get; private set; }
-+
 +    private readonly VirtualThumbstick _thumbstick;
-+    public static bool IsSecondaryActive { get; set; }
-+    private static PojavActionButton? _staticSecButton;
-+
-+    public static void ResetSecondaryMode()
-+    {
-+        IsSecondaryActive = false;
-+        if (_staticSecButton != null)
-+        {
-+            _staticSecButton.ResetToggle();
-+        }
-+    }
-+
-+    public static bool IsExamActive { get; set; }
-+    private static PojavActionButton? _staticExamButton;
-+
-+    public static void ResetExamMode()
-+    {
-+        IsExamActive = false;
-+        if (_staticExamButton != null && _staticExamButton.IsToggled)
-+        {
-+            _staticExamButton.ResetToggle();
-+        }
-+        else if (IoCManager.Resolve<IInputManager>().IsKeyDown(Keyboard.Key.Shift))
-+        {
-+            IoCManager.Resolve<IInputManager>().KeyUp(new KeyEventArgs(Keyboard.Key.Shift, false, false, false, false, false, 0));
-+        }
-+    }
-+
-+    public static bool IsPullActive { get; set; }
-+    private static PojavActionButton? _staticPullButton;
-+
-+    public static void ResetPullMode()
-+    {
-+        IsPullActive = false;
-+        if (_staticPullButton != null && _staticPullButton.IsToggled)
-+        {
-+            _staticPullButton.ResetToggle();
-+        }
-+        else if (IoCManager.Resolve<IInputManager>().IsKeyDown(Keyboard.Key.Control))
-+        {
-+            IoCManager.Resolve<IInputManager>().KeyUp(new KeyEventArgs(Keyboard.Key.Control, false, false, false, false, false, 0));
-+        }
-+    }
-+
-+    private readonly PojavActionButton _pullButton;
-+    private readonly PojavActionButton _examButton;
-+
-+    private readonly PojavActionButton _useButton;
-+    private readonly PojavActionButton _interactButton;
-+    private readonly PojavActionButton _secButton;
-+    private readonly PojavActionButton _handButton;
-+    private readonly PojavActionButton _dropButton;
-+    private readonly PojavActionButton _altButton;
-+    private readonly PojavActionButton _bagButton;
-+    private readonly PojavActionButton _throwButton;
-+
-+    private readonly Dictionary<long, Control> _claimedTouches = new();
-+
-+
-+
-+    private readonly PojavActionButton _escButton;
-+    private readonly PojavActionButton _keybButton;
-+    private readonly PojavActionButton _editButton;
-+    private readonly PojavActionButton _hideButton;
-+    private readonly PojavActionButton _settingsButton;
++    private readonly HashSet<long> _claimedTouches = new();
 +    private MobileDisplaySettingsWindow? _settingsWindow;
 +    private MobileDebugWindow? _debugWindow;
++    private readonly Button _settingsButton;
 +
-+    private readonly Control _clusterContainer;
-+    private readonly Control _topUtilityContainer;
-+    private readonly Control _editorBarContainer;
-+    private readonly Label _editorBanner;
-+    private readonly Button _addBtn;
-+    private readonly Button _scaleMinusBtn;
-+    private readonly Button _scalePlusBtn;
-+    private readonly Button _resetBtn;
-+    private readonly Button _doneBtn;
-+
-+    private readonly Control _modalOverlay = new()
-+    {
-+        Visible = false,
-+        MouseFilter = MouseFilterMode.Stop,
-+        HorizontalExpand = true,
-+        VerticalExpand = true
-+    };
-+    private readonly PanelContainer _dialogPanel = new();
-+    private readonly Label _dialogTitle = new()
-+    {
-+        Text = "BUTTON SETTINGS",
-+        FontColorOverride = new Color(255, 215, 0),
-+        HorizontalAlignment = HAlignment.Center
-+    };
-+    private readonly LineEdit _dialogNameInput = new() { HorizontalExpand = true, MinSize = new Vector2(140, 32) };
-+    private readonly LineEdit _dialogKeyInput = new() { HorizontalExpand = true, MinSize = new Vector2(140, 32) };
-+    private readonly Label _sizeDisplayLabel = new()
-+    {
-+        Text = "50 px",
-+        MinSize = new Vector2(60, 0),
-+        HorizontalAlignment = HAlignment.Center,
-+        VerticalAlignment = VAlignment.Center
-+    };
-+    private readonly Button _saveBtn = new() { Text = "SAVE" };
-+    private readonly Button _deleteBtn = new() { Text = "DELETE BUTTON" };
-+    private readonly Button _cancelBtn = new() { Text = "CANCEL" };
-+
-+    private PojavActionButton? _currentEditingButton;
-+    private float _dialogButtonSize = 50f;
-+    private string _lastSelectedQuickKey = "";
-+
-+    private bool _controlsHidden;
-+    private readonly List<PojavActionButton> _allButtons = new();
-+    private readonly List<PojavActionButton> _defaultButtons = new();
-+    private readonly HashSet<string> _deletedButtonIds = new();
-+    private readonly Dictionary<string, Vector2> _savedPositions = new();
-+    private readonly Dictionary<string, float> _savedSizes = new();
-+
-+    private Control? _currentlyDraggingControl;
-+    private Vector2? _dragTouchOffset;
-+    private Vector2 _dragStartPos;
-+    private bool _hasDraggedCurrent;
++    public bool BlocksWorldGestures => false;
 +
 +    public MobileControlsOverlay()
 +    {
 +        IoCManager.InjectDependencies(this);
-+
 +        MouseFilter = MouseFilterMode.Ignore;
-+        HorizontalExpand = true;
-+        VerticalExpand = true;
-+
-+        _clusterContainer = new Control
-+        {
-+            MouseFilter = MouseFilterMode.Ignore,
-+            HorizontalExpand = true,
-+            VerticalExpand = true
-+        };
-+        AddChild(_clusterContainer);
-+
 +        _thumbstick = new VirtualThumbstick();
-+        _thumbstick.OnPositionChanged += SaveLayout;
-+        _thumbstick.OnStickSteering += () =>
-+        {
-+            if (IsExamActive || IoCManager.Resolve<IInputManager>().IsKeyDown(Keyboard.Key.Shift))
-+            {
-+                ResetExamMode();
-+            }
-+        };
-+        _clusterContainer.AddChild(_thumbstick);
-+
-+        _pullButton = CreateButton("PULL", Keyboard.Key.Control, id: "pull", accent: new Color(155, 89, 182), isToggle: true);
-+        _pullButton.OnPressed = () =>
-+        {
-+            IsPullActive = _pullButton.IsToggled;
-+        };
-+        _pullButton.OnReleased = () =>
-+        {
-+            IsPullActive = false;
-+        };
-+        _staticPullButton = _pullButton;
-+
-+        _examButton = CreateButton("EXAM", Keyboard.Key.Shift, id: "exam", accent: new Color(52, 152, 219), isToggle: true);
-+        _examButton.OnPressed = () =>
-+        {
-+            IsExamActive = _examButton.IsToggled;
-+        };
-+        _examButton.OnReleased = () =>
-+        {
-+            IsExamActive = false;
-+        };
-+        _staticExamButton = _examButton;
-+
-+        _useButton = CreateButton("USE", Keyboard.Key.Z, id: "use", accent: new Color(0, 180, 216));
-+        _interactButton = CreateButton("INTER", Keyboard.Key.E, id: "inter", accent: new Color(46, 204, 113));
-+        _secButton = CreateButton("SEC", null, PojavSpecialAction.Secondary, id: "sec", accent: new Color(230, 126, 34), isToggle: true);
-+        _secButton.OnPressed = () =>
-+        {
-+            IsSecondaryActive = _secButton.IsToggled;
-+        };
-+        _staticSecButton = _secButton;
-+        _handButton = CreateButton("HAND", Keyboard.Key.X, id: "hand", accent: new Color(243, 156, 18));
-+        _dropButton = CreateButton("DROP", Keyboard.Key.Q, id: "drop", accent: new Color(231, 76, 60));
-+        _altButton = CreateButton("ALT", Keyboard.Key.Alt, id: "alt", accent: new Color(241, 196, 15), isToggle: true);
-+        _bagButton = CreateButton("BAG", Keyboard.Key.V, id: "bag", accent: new Color(26, 188, 156));
-+        _throwButton = CreateButton("THROW", null, PojavSpecialAction.Throw, id: "throw", accent: new Color(230, 81, 0));
-+
-+        _defaultButtons.AddRange(_allButtons);
-+
-+        _editorBarContainer = new Control
-+        {
-+            Visible = false,
-+            MouseFilter = MouseFilterMode.Stop,
-+            HorizontalExpand = true
-+        };
-+        AddChild(_editorBarContainer);
-+
-+        var barPanel = new PanelContainer
-+        {
-+            PanelOverride = new StyleBoxFlat
-+            {
-+                BackgroundColor = new Color(15, 18, 26, 235),
-+                BorderColor = new Color(255, 215, 0, 240),
-+                BorderThickness = new Thickness(2)
-+            }
-+        };
-+        _editorBarContainer.AddChild(barPanel);
-+
-+        var barLayout = new BoxContainer
-+        {
-+            Orientation = BoxContainer.LayoutOrientation.Horizontal,
-+            SeparationOverride = 8,
-+            Margin = new Thickness(8, 4)
-+        };
-+        barPanel.AddChild(barLayout);
-+
-+        _editorBanner = new Label
-+        {
-+            Text = "EDIT CONTROLS:",
-+            FontColorOverride = new Color(255, 230, 100),
-+            VerticalAlignment = VAlignment.Center
-+        };
-+        barLayout.AddChild(_editorBanner);
-+
-+        _addBtn = new Button { Text = "+ BUTTON" };
-+        _addBtn.OnPressed += _ => OpenAddButtonDialog();
-+        barLayout.AddChild(_addBtn);
-+
-+        _scaleMinusBtn = new Button { Text = "SCALE -" };
-+        _scaleMinusBtn.OnPressed += _ => AdjustScale(-0.1f);
-+        barLayout.AddChild(_scaleMinusBtn);
-+
-+        _scalePlusBtn = new Button { Text = "SCALE +" };
-+        _scalePlusBtn.OnPressed += _ => AdjustScale(0.1f);
-+        barLayout.AddChild(_scalePlusBtn);
-+
-+        _resetBtn = new Button { Text = "RESET" };
-+        _resetBtn.OnPressed += _ => ResetToDefaultLayout();
-+        barLayout.AddChild(_resetBtn);
-+
-+        _doneBtn = new Button { Text = "DONE" };
-+        _doneBtn.OnPressed += _ => ToggleEditMode();
-+        barLayout.AddChild(_doneBtn);
-+
-+        _topUtilityContainer = new Control
-+        {
-+            MouseFilter = MouseFilterMode.Ignore,
-+            HorizontalExpand = true,
-+            VerticalExpand = true
-+        };
-+        AddChild(_topUtilityContainer);
-+
-+        _escButton = CreateUtilityButton("ESC", Keyboard.Key.Escape, id: "esc");
-+        _keybButton = CreateUtilityButton("KEYB", null, PojavSpecialAction.KeyboardToggle, id: "keyb");
-+
-+        _editButton = CreateUtilityButton("EDIT", null, PojavSpecialAction.Custom, id: "edit");
-+        _editButton.OnPressed = ToggleEditMode;
-+
-+        _hideButton = CreateUtilityButton("HIDE", null, PojavSpecialAction.Custom, id: "hide");
-+        _hideButton.OnPressed = ToggleControlsVisibility;
-+
-+        _settingsButton = CreateUtilityButton("UI", null, PojavSpecialAction.Custom, id: "display-settings");
-+        _settingsButton.OnPressed = OpenDisplaySettings;
-+
-+        AddChild(_modalOverlay);
-+
-+        _dialogPanel.PanelOverride = new StyleBoxFlat
-+        {
-+            BackgroundColor = new Color(18, 22, 32, 245),
-+            BorderColor = new Color(255, 215, 0, 240),
-+            BorderThickness = new Thickness(2)
-+        };
-+        _modalOverlay.AddChild(_dialogPanel);
-+
-+        var dialogContent = new BoxContainer
-+        {
-+            Orientation = BoxContainer.LayoutOrientation.Vertical,
-+            SeparationOverride = 8,
-+            Margin = new Thickness(14, 12)
-+        };
-+        _dialogPanel.AddChild(dialogContent);
-+        dialogContent.AddChild(_dialogTitle);
-+
-+        var nameRow = new BoxContainer
-+        {
-+            Orientation = BoxContainer.LayoutOrientation.Horizontal,
-+            SeparationOverride = 8
-+        };
-+        nameRow.AddChild(new Label { Text = "Button Label:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
-+        nameRow.AddChild(_dialogNameInput);
-+        dialogContent.AddChild(nameRow);
-+
-+        dialogContent.AddChild(new Label { Text = "Quick Key Preset:", FontColorOverride = new Color(200, 200, 200) });
-+        var quickRow1 = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Horizontal, SeparationOverride = 6 };
-+        string[] row1Keys = ["E", "Z", "Q", "V", "X", "R", "F", "C", "Space"];
-+        foreach (var k in row1Keys)
-+        {
-+            var btn = new Button { Text = k, MinSize = new Vector2(36, 28) };
-+            var keyVal = k;
-+            btn.OnPressed += _ => SetDialogKey(keyVal);
-+            quickRow1.AddChild(btn);
-+        }
-+        dialogContent.AddChild(quickRow1);
-+
-+        var quickRow2 = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Horizontal, SeparationOverride = 6 };
-+        string[] row2Keys = ["Shift", "Control", "Alt", "U", "Y", "G", "T", "1", "2", "3", "Return"];
-+        foreach (var k in row2Keys)
-+        {
-+            var btn = new Button { Text = k, MinSize = new Vector2(36, 28) };
-+            var keyVal = k;
-+            btn.OnPressed += _ => SetDialogKey(keyVal);
-+            quickRow2.AddChild(btn);
-+        }
-+        dialogContent.AddChild(quickRow2);
-+
-+        var keyRow = new BoxContainer
-+        {
-+            Orientation = BoxContainer.LayoutOrientation.Horizontal,
-+            SeparationOverride = 8
-+        };
-+        keyRow.AddChild(new Label { Text = "Key Code:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
-+        keyRow.AddChild(_dialogKeyInput);
-+        dialogContent.AddChild(keyRow);
-+
-+        var sizeRow = new BoxContainer
-+        {
-+            Orientation = BoxContainer.LayoutOrientation.Horizontal,
-+            SeparationOverride = 8
-+        };
-+        sizeRow.AddChild(new Label { Text = "Button Size:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
-+        var sizeMinus = new Button { Text = " - ", MinSize = new Vector2(36, 28) };
-+        sizeMinus.OnPressed += _ =>
-+        {
-+            _dialogButtonSize = Math.Clamp(_dialogButtonSize - 6f, 32f, 96f);
-+            _sizeDisplayLabel.Text = $"{_dialogButtonSize:F0} px";
-+        };
-+        sizeRow.AddChild(sizeMinus);
-+        sizeRow.AddChild(_sizeDisplayLabel);
-+
-+        var sizePlus = new Button { Text = " + ", MinSize = new Vector2(36, 28) };
-+        sizePlus.OnPressed += _ =>
-+        {
-+            _dialogButtonSize = Math.Clamp(_dialogButtonSize + 6f, 32f, 96f);
-+            _sizeDisplayLabel.Text = $"{_dialogButtonSize:F0} px";
-+        };
-+        sizeRow.AddChild(sizePlus);
-+        dialogContent.AddChild(sizeRow);
-+
-+        var actionsRow = new BoxContainer
-+        {
-+            Orientation = BoxContainer.LayoutOrientation.Horizontal,
-+            SeparationOverride = 10,
-+            HorizontalAlignment = HAlignment.Right
-+        };
-+        dialogContent.AddChild(actionsRow);
-+
-+        _deleteBtn.OnPressed += _ => DeleteCurrentButton();
-+        actionsRow.AddChild(_deleteBtn);
-+
-+        _cancelBtn.OnPressed += _ => CloseModalDialog();
-+        actionsRow.AddChild(_cancelBtn);
-+
-+        _saveBtn.OnPressed += _ => SaveButtonFromDialog();
-+        actionsRow.AddChild(_saveBtn);
-+
-+        LoadSavedLayout();
-+        UpdateStyling();
-+        DumpMobileDebugInfo();
++        AddChild(_thumbstick);
++        _settingsButton = new Button { Name = "MobileDisplayButton", Text = "UI", MinSize = new Vector2(44, 36) };
++        _settingsButton.OnPressed += _ => OpenDisplaySettings();
++        AddChild(_settingsButton);
 +        _cfg.OnValueChanged(CVars.MobileControlsVisible, ControlsVisibilityChanged, true);
 +    }
 +
-+    private PojavActionButton CreateButton(
-+        string text,
-+        Keyboard.Key? actionKey = null,
-+        PojavSpecialAction special = PojavSpecialAction.None,
-+        string id = "",
-+        bool isCustom = false,
-+        Color? accent = null,
-+        bool isToggle = false)
++    private void ControlsVisibilityChanged(bool visible)
 +    {
-+        var btn = new PojavActionButton(text, actionKey, special, id, isCustom)
-+        {
-+            AccentColor = accent ?? new Color(210, 210, 210),
-+            IsToggle = isToggle
-+        };
-+        btn.OnPositionChanged += SaveLayout;
-+        btn.OnConfigureRequested += OpenConfigureButtonDialog;
-+        _allButtons.Add(btn);
-+        _clusterContainer.AddChild(btn);
-+        return btn;
++        _thumbstick.Visible = visible;
++        if (!visible) { _thumbstick.ReleaseStick(); _claimedTouches.Clear(); }
++        if (AppDomain.CurrentDomain.GetData("SS14_ANDROID_DISPLAY_SAVE") is Action<float, bool> save)
++            save(_cfg.GetCVar(CVars.DisplayUIScale), visible);
 +    }
 +
-+    private PojavActionButton CreateUtilityButton(string text, Keyboard.Key? actionKey = null, PojavSpecialAction special = PojavSpecialAction.None, string id = "")
++    public bool HandleTouch(TouchFingerEventArgs args)
 +    {
-+        var btn = new PojavActionButton(text, actionKey, special, id, isCustom: false);
-+        _topUtilityContainer.AddChild(btn);
-+        return btn;
-+    }
-+
-+    private void SetDialogKey(string keyName)
-+    {
-+        _dialogKeyInput.Text = keyName;
-+        if (string.IsNullOrWhiteSpace(_dialogNameInput.Text) || _dialogNameInput.Text == _lastSelectedQuickKey)
++        if (args.Action is TouchFingerAction.Up or TouchFingerAction.Cancel)
 +        {
-+            _dialogNameInput.Text = keyName.ToUpperInvariant();
++            var claimed = _claimedTouches.Remove(args.FingerId);
++            _thumbstick.OnTouchUp(args.FingerId);
++            return claimed;
 +        }
-+        _lastSelectedQuickKey = keyName;
-+    }
-+
-+    private void OpenAddButtonDialog()
-+    {
-+        _currentEditingButton = null;
-+        _dialogTitle.Text = "ADD NEW BUTTON";
-+        _dialogTitle.FontColorOverride = new Color(255, 215, 0);
-+
-+        _dialogNameInput.Text = "E";
-+        _dialogKeyInput.Text = "E";
-+        _lastSelectedQuickKey = "E";
-+        _dialogButtonSize = 52f;
-+        _sizeDisplayLabel.Text = "52 px";
-+
-+        _saveBtn.Text = "CREATE";
-+        _deleteBtn.Visible = false;
-+
-+        _modalOverlay.Visible = true;
-+    }
-+
-+    private void OpenConfigureButtonDialog(PojavActionButton btn)
-+    {
-+        _currentEditingButton = btn;
-+        _dialogTitle.Text = $"BUTTON SETTINGS: {btn.Text}";
-+        _dialogTitle.FontColorOverride = new Color(255, 230, 100);
-+
-+        _dialogNameInput.Text = btn.Text;
-+        _dialogKeyInput.Text = btn.ActionKey?.ToString() ?? (btn.SpecialAction != PojavSpecialAction.None ? btn.SpecialAction.ToString() : "");
-+        _lastSelectedQuickKey = "";
-+        _dialogButtonSize = btn.CustomSize ?? 50f;
-+        _sizeDisplayLabel.Text = $"{_dialogButtonSize:F0} px";
-+
-+        _saveBtn.Text = "SAVE";
-+        _deleteBtn.Visible = true;
-+
-+        _modalOverlay.Visible = true;
-+    }
-+
-+    private void CloseModalDialog()
-+    {
-+        _modalOverlay.Visible = false;
-+        _currentEditingButton = null;
-+    }
-+
-+    private void SaveButtonFromDialog()
-+    {
-+        var name = string.IsNullOrWhiteSpace(_dialogNameInput.Text) ? "BTN" : _dialogNameInput.Text.Trim();
-+        var keyText = _dialogKeyInput.Text.Trim();
-+
-+        Keyboard.Key? key = null;
-+        if (Enum.TryParse<Keyboard.Key>(keyText, true, out var parsedKey))
++        if (args.Action == TouchFingerAction.Down)
 +        {
-+            key = parsedKey;
++            _claimedTouches.Remove(args.FingerId);
++            _thumbstick.OnTouchUp(args.FingerId);
++            var position = args.Coordinates.Position / _thumbstick.UIScale - _thumbstick.GlobalPosition;
++            // A window covering the stick must receive its own input.
++            var hit = _uiMgr.MouseGetControl(args.Coordinates);
++            if (!_thumbstick.VisibleInTree || !_thumbstick.HasPoint(position) || hit != _thumbstick) return false;
++            _claimedTouches.Add(args.FingerId);
++            _thumbstick.OnTouchDown(args.FingerId, position);
++            return true;
 +        }
-+
-+        if (_currentEditingButton == null)
++        if (args.Action == TouchFingerAction.Motion && _claimedTouches.Contains(args.FingerId))
 +        {
-+            var id = $"custom_{Guid.NewGuid().ToString()[..6]}";
-+            var newBtn = CreateButton(name, key, PojavSpecialAction.None, id, isCustom: true);
-+            newBtn.IsEditMode = IsEditMode;
-+            newBtn.CustomSize = _dialogButtonSize;
-+
-+            var center = (Size.X > 0 && Size.Y > 0) ? Size / 2f : new Vector2(400, 300);
-+            newBtn.CustomPosition = center;
++            _thumbstick.OnTouchMove(args.FingerId, args.Coordinates.Position / _thumbstick.UIScale - _thumbstick.GlobalPosition);
++            return true;
 +        }
-+        else
-+        {
-+            _currentEditingButton.Text = name;
-+            if (key.HasValue)
-+            {
-+                _currentEditingButton.ActionKey = key.Value;
-+            }
-+            _currentEditingButton.CustomSize = _dialogButtonSize;
-+        }
-+
-+        CloseModalDialog();
-+        SaveLayout();
-+        InvalidateArrange();
++        return false;
 +    }
 +
-+    private void DeleteCurrentButton()
++    public void SynchronizeTouchContacts(long[] activeFingers)
 +    {
-+        if (_currentEditingButton == null)
-+            return;
-+
-+        var btn = _currentEditingButton;
-+        if (btn == _editButton || btn == _hideButton || btn == _escButton || btn == _keybButton)
-+            return;
-+
-+        _deletedButtonIds.Add(btn.Id);
-+        _allButtons.Remove(btn);
-+        _clusterContainer.RemoveChild(btn);
-+
-+        CloseModalDialog();
-+        SaveLayout();
-+        InvalidateArrange();
++        _thumbstick.SynchronizeTouchContacts(activeFingers);
++        _claimedTouches.RemoveWhere(id => Array.IndexOf(activeFingers, id) < 0);
 +    }
 +
-+    public void StartDragging(Control control, Vector2 touchOffsetInControl, Vector2 initialGlobalPos)
++    protected override void FrameUpdate(FrameEventArgs args)
 +    {
-+        if (!IsEditMode)
-+            return;
-+
-+        _currentlyDraggingControl = control;
-+        _dragStartPos = initialGlobalPos;
-+        _dragTouchOffset = touchOffsetInControl;
-+        _hasDraggedCurrent = false;
-+    }
-+
-+    protected internal override void MouseMove(GUIMouseMoveEventArgs args)
-+    {
-+        base.MouseMove(args);
-+
-+        if (IsEditMode && _currentlyDraggingControl != null && _dragTouchOffset != null)
-+        {
-+            var delta = args.GlobalPosition - _dragStartPos;
-+            if (delta.LengthSquared() > 16f)
-+            {
-+                _hasDraggedCurrent = true;
-+            }
-+
-+            var parentGlobal = _clusterContainer.GlobalPosition;
-+            var newGlobal = args.GlobalPosition - _dragTouchOffset.Value;
-+            var newLocal = newGlobal - parentGlobal;
-+
-+            if (_currentlyDraggingControl is PojavActionButton btn)
-+            {
-+                btn.CustomPosition = newLocal;
-+                btn.Arrange(new UIBox2(newLocal, newLocal + btn.Size));
-+            }
-+            else if (_currentlyDraggingControl is VirtualThumbstick stick)
-+            {
-+                stick.CustomPosition = newLocal;
-+                stick.Arrange(new UIBox2(newLocal, newLocal + stick.Size));
-+            }
-+
-+            SaveLayout();
-+        }
-+    }
-+
-+    protected internal override void KeyBindUp(GUIBoundKeyEventArgs args)
-+    {
-+        base.KeyBindUp(args);
-+
-+        if (args.Function == EngineKeyFunctions.UIClick)
-+        {
-+            if (IsEditMode && _currentlyDraggingControl != null)
-+            {
-+                var dragged = _currentlyDraggingControl;
-+                var wasDragged = _hasDraggedCurrent;
-+                _currentlyDraggingControl = null;
-+                _dragTouchOffset = null;
-+                SaveLayout();
-+                InvalidateArrange();
-+
-+                if (!wasDragged && dragged is PojavActionButton btn)
-+                {
-+                    OpenConfigureButtonDialog(btn);
-+                }
-+                args.Handle();
-+                return;
-+            }
-+        }
-+    }
-+
-+    private void ToggleEditMode()
-+    {
-+        IsEditMode = !IsEditMode;
-+        System.Console.WriteLine($"[MobileEdit] ToggleEditMode now={IsEditMode} buttons={_allButtons.Count}");
-+        MouseFilter = IsEditMode ? MouseFilterMode.Stop : MouseFilterMode.Ignore;
-+        _editorBarContainer.Visible = IsEditMode;
-+        _editButton.Text = IsEditMode ? "DONE" : "EDIT";
-+
-+        _thumbstick.IsEditMode = IsEditMode;
-+        foreach (var btn in _allButtons)
-+        {
-+            btn.IsEditMode = IsEditMode;
-+        }
-+
-+        if (!IsEditMode)
-+        {
-+            _currentlyDraggingControl = null;
-+            _dragTouchOffset = null;
-+            CloseModalDialog();
-+            SaveLayout();
-+        }
-+
-+        InvalidateArrange();
-+    }
-+
-+    private void AdjustScale(float delta)
-+    {
-+        var current = _cfg.GetCVar(CVars.MobileControlsScale);
-+        var updated = Math.Clamp(current + delta, 0.6f, 3.0f);
-+        _cfg.SetCVar(CVars.MobileControlsScale, updated);
-+        UpdateStyling();
-+        InvalidateArrange();
-+    }
-+
-+    private void ResetToDefaultLayout()
-+    {
-+        _cfg.SetCVar(CVars.MobileControlsLayout, string.Empty);
-+        _savedPositions.Clear();
-+        _savedSizes.Clear();
-+        _deletedButtonIds.Clear();
-+
-+        for (int i = _allButtons.Count - 1; i >= 0; i--)
-+        {
-+            var btn = _allButtons[i];
-+            if (btn.IsCustom)
-+            {
-+                _allButtons.RemoveAt(i);
-+                _clusterContainer.RemoveChild(btn);
-+            }
-+        }
-+
-+        foreach (var defBtn in _defaultButtons)
-+        {
-+            if (!_allButtons.Contains(defBtn))
-+            {
-+                _allButtons.Add(defBtn);
-+                _clusterContainer.AddChild(defBtn);
-+            }
-+            defBtn.CustomPosition = null;
-+            defBtn.CustomSize = null;
-+            defBtn.IsEditMode = IsEditMode;
-+        }
-+
-+        _thumbstick.CustomPosition = null;
-+        InvalidateArrange();
-+    }
-+
-+    private void ToggleControlsVisibility()
-+    {
-+        _cfg.SetCVar(CVars.MobileControlsVisible, _controlsHidden);
-+        _cfg.SaveToFile();
++        base.FrameUpdate(args);
++        if (AppDomain.CurrentDomain.GetData("SS14_ANDROID_ACTIVE_TOUCHES") is Func<long[]> snapshot)
++            SynchronizeTouchContacts(snapshot());
 +    }
 +
 +    public void OpenDisplaySettings()
@@ -2199,526 +1558,24 @@ index 0000000..db2d937
 +        window.OpenCentered();
 +    }
 +
-+    private void ControlsVisibilityChanged(bool visible)
-+    {
-+        _controlsHidden = !visible;
-+        _clusterContainer.Visible = !_controlsHidden;
-+        _editButton.Visible = !_controlsHidden;
-+        _escButton.Visible = !_controlsHidden;
-+        _keybButton.Visible = !_controlsHidden;
-+        _hideButton.Visible = !_controlsHidden;
-+        _settingsButton.Visible = true;
-+
-+        if (_controlsHidden)
-+        {
-+            if (IsEditMode) ToggleEditMode();
-+            _thumbstick.ReleaseStick();
-+            foreach (var btn in _allButtons)
-+            {
-+                btn.Release();
-+                btn.ResetToggle();
-+            }
-+            _claimedTouches.Clear();
-+            ResetSecondaryMode();
-+            ResetExamMode();
-+            ResetPullMode();
-+            _escButton.Release();
-+            _keybButton.Release();
-+            _editButton.Release();
-+            _hideButton.Release();
-+        }
-+        if (AppDomain.CurrentDomain.GetData("SS14_ANDROID_DISPLAY_SAVE") is Action<float, bool> save)
-+            save(_cfg.GetCVar(CVars.DisplayUIScale), visible);
-+    }
-+
-+    public bool HandleTouch(TouchFingerEventArgs args)
-+    {
-+        // A release belongs to the contact, even after hiding controls, opening
-+        // a modal or losing the hit-test/claim. It must never depend on location.
-+        if (args.Action is TouchFingerAction.Up or TouchFingerAction.Cancel)
-+        {
-+            var wasPressed = _thumbstick.IsPressed;
-+            _thumbstick.OnTouchUp(args.FingerId);
-+            return ReleaseTouch(args.FingerId) || (wasPressed && !_thumbstick.IsPressed);
-+        }
-+        if (!VisibleInTree)
-+            return false;
-+
-+        if (_modalOverlay.Visible || IsEditMode)
-+        {
-+            _thumbstick.ReleaseStick();
-+            return false;
-+        }
-+
-+        switch (args.Action)
-+        {
-+            case TouchFingerAction.Down:
-+            {
-+                ReleaseTouch(args.FingerId);
-+                var stickPos = args.Coordinates.Position / _thumbstick.UIScale - _thumbstick.GlobalPosition;
-+                if (_thumbstick.VisibleInTree && _thumbstick.HasPoint(stickPos))
-+                {
-+                    _claimedTouches[args.FingerId] = _thumbstick;
-+                    _thumbstick.OnTouchDown(args.FingerId, stickPos);
-+                    return true;
-+                }
-+
-+                for (int i = _allButtons.Count - 1; i >= 0; i--)
-+                {
-+                    var btn = _allButtons[i];
-+                    var btnPos = args.Coordinates.Position / btn.UIScale - btn.GlobalPosition;
-+                    if (btn.VisibleInTree && btn.HasPoint(btnPos))
-+                    {
-+                        _claimedTouches[args.FingerId] = btn;
-+                        btn.OnTouchDown(args.FingerId);
-+                        return true;
-+                    }
-+                }
-+
-+                PojavActionButton[] topBtns = [_editButton, _hideButton, _escButton, _keybButton, _settingsButton];
-+                foreach (var btn in topBtns)
-+                {
-+                    var btnPos = args.Coordinates.Position / btn.UIScale - btn.GlobalPosition;
-+                    if (btn.VisibleInTree && btn.HasPoint(btnPos))
-+                    {
-+                        _claimedTouches[args.FingerId] = btn;
-+                        btn.OnTouchDown(args.FingerId);
-+                        return true;
-+                    }
-+                }
-+
-+                return false;
-+            }
-+
-+            case TouchFingerAction.Motion:
-+            {
-+                if (_claimedTouches.TryGetValue(args.FingerId, out var target))
-+                {
-+                    if (target is VirtualThumbstick stick)
-+                    {
-+                        var stickPos = args.Coordinates.Position / stick.UIScale - stick.GlobalPosition;
-+                        stick.OnTouchMove(args.FingerId, stickPos);
-+                    }
-+                    return true;
-+                }
-+
-+                return false;
-+            }
-+
-+        }
-+
-+        return false;
-+    }
-+
-+    private bool ReleaseTouch(long id)
-+    {
-+        if (!_claimedTouches.Remove(id, out var target)) return false;
-+        if (target is VirtualThumbstick stick) stick.OnTouchUp(id);
-+        else if (target is PojavActionButton button) button.OnTouchUp(id);
-+        return true;
-+    }
-+
-+    public void SynchronizeTouchContacts(long[] activeFingers)
-+    {
-+        _thumbstick.SynchronizeTouchContacts(activeFingers);
-+        foreach (var id in new List<long>(_claimedTouches.Keys))
-+            if (Array.IndexOf(activeFingers, id) < 0) ReleaseTouch(id);
-+    }
-+
-+    protected override void FrameUpdate(FrameEventArgs args)
-+    {
-+        base.FrameUpdate(args);
-+        if (AppDomain.CurrentDomain.GetData("SS14_ANDROID_ACTIVE_TOUCHES") is Func<long[]> snapshot)
-+            SynchronizeTouchContacts(snapshot());
-+    }
-+
-+
-+    public void UpdateStyling()
-+    {
-+        var opacity = Math.Clamp(_cfg.GetCVar(CVars.MobileControlsOpacity), 0.2f, 1.0f);
-+        Modulate = new Color(1f, 1f, 1f, opacity);
-+
-+        var enabled = _cfg.GetCVar(CVars.MobileTouchControls);
-+        Visible = enabled;
-+    }
-+
-+    private void LoadSavedLayout()
-+    {
-+        var serialized = _cfg.GetCVar(CVars.MobileControlsLayout);
-+        if (string.IsNullOrWhiteSpace(serialized))
-+            return;
-+
-+        var entries = serialized.Split(';', StringSplitOptions.RemoveEmptyEntries);
-+        foreach (var entry in entries)
-+        {
-+            var parts = entry.Split(':');
-+            if (parts.Length < 2) continue;
-+
-+            if (parts[0] == "stick" && parts.Length >= 2)
-+            {
-+                var coords = parts[1].Split(',');
-+                if (coords.Length == 2 &&
-+                    float.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var sx) &&
-+                    float.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var sy))
-+                {
-+                    _thumbstick.CustomPosition = new Vector2(sx, sy);
-+                }
-+                continue;
-+            }
-+
-+            if (parts[0] == "del" && parts.Length >= 2)
-+            {
-+                var delId = parts[1];
-+                if (delId != "edit" && delId != "hide" && delId != "esc" && delId != "keyb")
-+                {
-+                    _deletedButtonIds.Add(delId);
-+                }
-+                continue;
-+            }
-+
-+            if (parts[0] == "custom" && parts.Length >= 5)
-+            {
-+                var id = parts[1];
-+                var text = parts[2];
-+                Keyboard.Key? key = Enum.TryParse<Keyboard.Key>(parts[3], true, out var parsedKey) ? parsedKey : null;
-+                var coords = parts[4].Split(',');
-+                if (coords.Length == 2 &&
-+                    float.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var cx) &&
-+                    float.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var cy))
-+                {
-+                    float? cSize = null;
-+                    if (parts.Length >= 6 && float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var ps))
-+                    {
-+                        cSize = ps;
-+                    }
-+                    var customBtn = CreateButton(text, key, PojavSpecialAction.None, id, isCustom: true);
-+                    customBtn.CustomPosition = new Vector2(cx, cy);
-+                    customBtn.CustomSize = cSize;
-+                }
-+                continue;
-+            }
-+
-+            if (parts[0] == "btn" && parts.Length >= 5)
-+            {
-+                var id = parts[1];
-+                var text = parts[2];
-+                Keyboard.Key? key = Enum.TryParse<Keyboard.Key>(parts[3], true, out var parsedKey) ? parsedKey : null;
-+                var coords = parts[4].Split(',');
-+                float? cSize = null;
-+                if (parts.Length >= 6 && float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var ps))
-+                {
-+                    cSize = ps;
-+                }
-+
-+                var existing = _allButtons.Find(b => b.Id == id);
-+                if (existing != null)
-+                {
-+                    if (!string.IsNullOrWhiteSpace(text)) existing.Text = text;
-+                    if (key.HasValue) existing.ActionKey = key.Value;
-+                    if (coords.Length == 2 &&
-+                        float.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var bx) &&
-+                        float.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var by))
-+                    {
-+                        existing.CustomPosition = new Vector2(bx, by);
-+                    }
-+                    if (cSize.HasValue) existing.CustomSize = cSize;
-+                }
-+                continue;
-+            }
-+
-+            var btnId = parts[0];
-+            var bCoords = parts[1].Split(',');
-+            if (bCoords.Length == 2 &&
-+                float.TryParse(bCoords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var obx) &&
-+                float.TryParse(bCoords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var oby))
-+            {
-+                _savedPositions[btnId] = new Vector2(obx, oby);
-+                if (parts.Length >= 3 && float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var bs))
-+                {
-+                    _savedSizes[btnId] = bs;
-+                }
-+            }
-+        }
-+
-+        _deletedButtonIds.Remove("edit");
-+        _deletedButtonIds.Remove("hide");
-+        _deletedButtonIds.Remove("esc");
-+        _deletedButtonIds.Remove("keyb");
-+
-+        for (int i = _allButtons.Count - 1; i >= 0; i--)
-+        {
-+            var btn = _allButtons[i];
-+            if (_deletedButtonIds.Contains(btn.Id))
-+            {
-+                _allButtons.RemoveAt(i);
-+                _clusterContainer.RemoveChild(btn);
-+            }
-+        }
-+
-+        foreach (var btn in _allButtons)
-+        {
-+            if (_savedPositions.TryGetValue(btn.Id, out var pos))
-+                btn.CustomPosition = pos;
-+            if (_savedSizes.TryGetValue(btn.Id, out var size))
-+                btn.CustomSize = size;
-+        }
-+    }
-+
-+    private void SaveLayout()
-+    {
-+        var parts = new List<string>();
-+
-+        if (_thumbstick.CustomPosition.HasValue)
-+        {
-+            var p = _thumbstick.CustomPosition.Value;
-+            parts.Add($"stick:{p.X.ToString("F1", CultureInfo.InvariantCulture)},{p.Y.ToString("F1", CultureInfo.InvariantCulture)}");
-+        }
-+
-+        foreach (var delId in _deletedButtonIds)
-+        {
-+            if (delId == "edit" || delId == "hide" || delId == "esc" || delId == "keyb")
-+                continue;
-+            parts.Add($"del:{delId}");
-+        }
-+
-+        foreach (var btn in _allButtons)
-+        {
-+            if (btn == _editButton || btn == _hideButton || btn == _escButton || btn == _keybButton)
-+                continue;
-+
-+            var posX = btn.CustomPosition?.X ?? btn.DefaultPosition.X;
-+            var posY = btn.CustomPosition?.Y ?? btn.DefaultPosition.Y;
-+            var sizeStr = btn.CustomSize.HasValue ? $":{btn.CustomSize.Value.ToString("F0", CultureInfo.InvariantCulture)}" : "";
-+
-+            if (btn.IsCustom)
-+            {
-+                var keyStr = btn.ActionKey?.ToString() ?? "None";
-+                parts.Add($"custom:{btn.Id}:{btn.Text}:{keyStr}:{posX.ToString("F1", CultureInfo.InvariantCulture)},{posY.ToString("F1", CultureInfo.InvariantCulture)}{sizeStr}");
-+            }
-+            else
-+            {
-+                var keyStr = btn.ActionKey?.ToString() ?? (btn.SpecialAction != PojavSpecialAction.None ? btn.SpecialAction.ToString() : "None");
-+                parts.Add($"btn:{btn.Id}:{btn.Text}:{keyStr}:{posX.ToString("F1", CultureInfo.InvariantCulture)},{posY.ToString("F1", CultureInfo.InvariantCulture)}{sizeStr}");
-+            }
-+        }
-+
-+        var serialized = string.Join(";", parts);
-+        _cfg.SetCVar(CVars.MobileControlsLayout, serialized);
-+        DumpMobileDebugInfo();
-+    }
-+
-+    private void DumpArrangeDebugInfo(Vector2 viewport, float scale)
-+    {
-+        try
-+        {
-+            var dir = ProgramShared.PathOffset;
-+            if (string.IsNullOrEmpty(dir))
-+                return;
-+            var sb = new System.Text.StringBuilder();
-+            sb.AppendLine($"utc={DateTime.UtcNow:O}");
-+            sb.AppendLine($"viewport={viewport} controls_scale={scale.ToString(CultureInfo.InvariantCulture)}");
-+            sb.AppendLine($"stick pos={_thumbstick.GlobalPosition} size={_thumbstick.Size} custom={_thumbstick.CustomPosition?.ToString() ?? "<none>"}");
-+            foreach (var b in _allButtons)
-+            {
-+                sb.AppendLine($"btn {b.Id} pos={b.GlobalPosition} size={b.Size} custom={b.CustomPosition?.ToString() ?? "<none>"} label=\"{b.Text}\" edit={b.IsEditMode}");
-+            }
-+            File.WriteAllText(Path.Combine(dir, "mobile-arrange-debug.txt"), sb.ToString());
-+        }
-+        catch { }
-+    }
-+
-+    /// <summary>
-+    /// Writes current touch-control state where the launcher crash reporter
-+    /// can pick it up (separate process, same files dir). Proves the overlay
-+    /// constructed and shows exact positions/scales.
-+    /// </summary>
-+    private void DumpMobileDebugInfo()
-+    {
-+        try
-+        {
-+            var dir = ProgramShared.PathOffset;
-+            if (string.IsNullOrEmpty(dir))
-+                return;
-+            var sb = new System.Text.StringBuilder();
-+            sb.AppendLine($"utc={DateTime.UtcNow:O}");
-+            sb.AppendLine($"overlay_constructed=true");
-+            sb.AppendLine($"mobile.touch_controls={_cfg.GetCVar(CVars.MobileTouchControls)}");
-+            sb.AppendLine($"mobile.controls_scale={_cfg.GetCVar(CVars.MobileControlsScale).ToString(CultureInfo.InvariantCulture)}");
-+            sb.AppendLine($"mobile.controls_opacity={_cfg.GetCVar(CVars.MobileControlsOpacity).ToString(CultureInfo.InvariantCulture)}");
-+            sb.AppendLine($"mobile.controls_layout={_cfg.GetCVar(CVars.MobileControlsLayout)}");
-+            sb.AppendLine($"display.uiScale={_cfg.GetCVar(CVars.DisplayUIScale).ToString(CultureInfo.InvariantCulture)}");
-+            sb.AppendLine($"stick_default={_thumbstick.DefaultPosition} stick_custom={_thumbstick.CustomPosition?.ToString() ?? "<none>"}");
-+            sb.AppendLine($"stick_size={_thumbstick.Size} overlay_size={Size} overlay_visible={Visible}");
-+            File.WriteAllText(Path.Combine(dir, "mobile-controls-debug.txt"), sb.ToString());
-+        }
-+        catch { }
-+    }
-+
-+    private void ArrangeChild(Control control, Vector2 defaultPos, Vector2 defaultSize, Vector2 viewport)
-+    {
-+        Vector2 pos;
-+        Vector2 size = defaultSize;
-+
-+        if (control is PojavActionButton btn)
-+        {
-+            btn.DefaultPosition = defaultPos;
-+            if (btn.CustomPosition.HasValue)
-+            {
-+                var cp = btn.CustomPosition.Value;
-+                if (cp.X < -50f || cp.Y < -50f || cp.X > 4000f || cp.Y > 4000f)
-+                {
-+                    btn.CustomPosition = null;
-+                }
-+            }
-+            pos = btn.CustomPosition ?? defaultPos;
-+            if (btn.CustomSize.HasValue)
-+            {
-+                var s = btn.CustomSize.Value;
-+                size = new Vector2(s, s);
-+            }
-+        }
-+        else if (control is VirtualThumbstick stick)
-+        {
-+            stick.DefaultPosition = defaultPos;
-+            if (stick.CustomPosition.HasValue)
-+            {
-+                var cp = stick.CustomPosition.Value;
-+                if (cp.X < -50f || cp.Y < -50f || cp.X > 4000f || cp.Y > 4000f)
-+                {
-+                    stick.CustomPosition = null;
-+                }
-+            }
-+            pos = stick.CustomPosition ?? defaultPos;
-+        }
-+        else
-+        {
-+            pos = defaultPos;
-+        }
-+
-+        // Mobile: never arrange off-screen (stale saved coords from another
-+        // orientation, or a foreign layout format, used to lose controls).
-+        var maxPos = viewport - size;
-+        if (maxPos.X < 0f) maxPos.X = 0f;
-+        if (maxPos.Y < 0f) maxPos.Y = 0f;
-+        pos = new Vector2(Math.Clamp(pos.X, 0f, maxPos.X), Math.Clamp(pos.Y, 0f, maxPos.Y));
-+
-+        control.Arrange(new UIBox2(pos, pos + size));
-+    }
-+
 +    protected override Vector2 ArrangeOverride(Vector2 finalSize)
 +    {
-+        _clusterContainer.Arrange(new UIBox2(Vector2.Zero, finalSize));
-+        _topUtilityContainer.Arrange(new UIBox2(Vector2.Zero, finalSize));
-+
-+        var scale = MobileDisplaySizing.ControlsScale(UIScale, finalSize.Y * UIScale,
-+            _cfg.GetCVar(CVars.MobileControlsScale));
-+        var stickScale = Math.Clamp(_cfg.GetCVar(CVars.MobileThumbstickScale), 0.5f, 2.0f);
-+
-+        var stickRadius = 75f * scale * stickScale;
-+        var stickDiameter = stickRadius * 2f;
-+        var stickMarginX = 35f * scale;
-+
-+        _thumbstick.Radius = stickRadius;
-+        _thumbstick.KnobRadius = 32f * scale * stickScale;
-+        _thumbstick.Deadzone = 10f * scale * stickScale;
-+
-+        var stickCenterY = finalSize.Y * 0.66f;
-+        var defaultStickY = stickCenterY - stickRadius;
-+        var defaultStickPos = new Vector2(stickMarginX, defaultStickY);
-+        var stickSize = new Vector2(stickDiameter + 20f, stickDiameter + 20f);
-+        ArrangeChild(_thumbstick, defaultStickPos, stickSize, finalSize);
-+
-+        var useSize = 54f * scale;
-+        var useDefPos = new Vector2(finalSize.X - useSize - 24f * scale, finalSize.Y * 0.54f);
-+        ArrangeChild(_useButton, useDefPos, new Vector2(useSize, useSize), finalSize);
-+
-+        var interSize = 48f * scale;
-+        var interDefPos = new Vector2(useDefPos.X - interSize - 16f * scale, useDefPos.Y + 14f * scale);
-+        ArrangeChild(_interactButton, interDefPos, new Vector2(interSize, interSize), finalSize);
-+
-+        var secSize = 46f * scale;
-+        var secDefPos = new Vector2(interDefPos.X - secSize - 14f * scale, interDefPos.Y + 12f * scale);
-+        ArrangeChild(_secButton, secDefPos, new Vector2(secSize, secSize), finalSize);
-+
-+        var handSize = 44f * scale;
-+        var handDefPos = new Vector2(useDefPos.X + 4f * scale, useDefPos.Y - handSize - 16f * scale);
-+        ArrangeChild(_handButton, handDefPos, new Vector2(handSize, handSize), finalSize);
-+
-+        var dropSize = 42f * scale;
-+        var dropDefPos = new Vector2(interDefPos.X - 2f * scale, interDefPos.Y - dropSize - 18f * scale);
-+        ArrangeChild(_dropButton, dropDefPos, new Vector2(dropSize, dropSize), finalSize);
-+
-+        var altSize = 42f * scale;
-+        var altDefPos = new Vector2(secDefPos.X, secDefPos.Y - altSize - 16f * scale);
-+        ArrangeChild(_altButton, altDefPos, new Vector2(altSize, altSize), finalSize);
-+
-+        var examSize = 42f * scale;
-+        var examDefPos = new Vector2(dropDefPos.X, dropDefPos.Y - examSize - 14f * scale);
-+        ArrangeChild(_examButton, examDefPos, new Vector2(examSize, examSize), finalSize);
-+
-+        var pullSize = 42f * scale;
-+        var pullDefPos = new Vector2(altDefPos.X, altDefPos.Y - pullSize - 14f * scale);
-+        ArrangeChild(_pullButton, pullDefPos, new Vector2(pullSize, pullSize), finalSize);
-+
-+        var bagSize = 44f * scale;
-+        var bagDefPos = new Vector2(handDefPos.X, handDefPos.Y - bagSize - 16f * scale);
-+        ArrangeChild(_bagButton, bagDefPos, new Vector2(bagSize, bagSize), finalSize);
-+
-+        var throwSize = 42f * scale;
-+        var throwDefPos = new Vector2(examDefPos.X, examDefPos.Y - throwSize - 14f * scale);
-+        ArrangeChild(_throwButton, throwDefPos, new Vector2(throwSize, throwSize), finalSize);
-+
-+        foreach (var btn in _allButtons)
-+        {
-+            if (btn.IsCustom)
-+            {
-+                var defSize = new Vector2(50f * scale, 50f * scale);
-+                var defPos = new Vector2(finalSize.X / 2f - 25f, finalSize.Y / 2f - 25f);
-+                ArrangeChild(btn, defPos, defSize, finalSize);
-+            }
-+        }
-+
-+        var topBtnW = 46f * scale;
-+        var topBtnH = 34f * scale;
-+        var topY = 14f * scale;
-+
-+        ArrangeChild(_escButton, new Vector2(24f * scale, topY), new Vector2(topBtnW, topBtnH), finalSize);
-+        ArrangeChild(_editButton, new Vector2(24f * scale + topBtnW + 12f * scale, topY), new Vector2(topBtnW + 8f * scale, topBtnH), finalSize);
-+
-+        var keybX = finalSize.X - topBtnW - (24f * scale);
-+        ArrangeChild(_keybButton, new Vector2(keybX, topY), new Vector2(topBtnW, topBtnH), finalSize);
-+
-+        var hideW = 48f * scale;
-+        var hideH = 28f * scale;
-+        var hideX = (finalSize.X - hideW) / 2f;
-+        ArrangeChild(_hideButton, new Vector2(hideX, 6f * scale), new Vector2(hideW, hideH), finalSize);
-+        var settingsX = _controlsHidden ? (finalSize.X - topBtnW) / 2f : hideX - topBtnW - 12f * scale;
-+        ArrangeChild(_settingsButton, new Vector2(settingsX, 6f * scale), new Vector2(topBtnW, topBtnH), finalSize);
-+
-+        if (_editorBarContainer.Visible)
-+        {
-+            var barW = MathF.Min(finalSize.X - 260f * scale, 750f);
-+            var barH = 50f;
-+            var barX = (finalSize.X - barW) / 2f;
-+            _editorBarContainer.Arrange(new UIBox2(barX, 10f, barX + barW, 10f + barH));
-+        }
-+
-+        if (_modalOverlay.Visible)
-+        {
-+            _modalOverlay.Arrange(new UIBox2(Vector2.Zero, finalSize));
-+            var dialogW = MathF.Min(finalSize.X - 40f, 520f);
-+            var dialogH = MathF.Min(finalSize.Y - 30f, 320f);
-+            var dialogX = (finalSize.X - dialogW) / 2f;
-+            var dialogY = (finalSize.Y - dialogH) / 2f;
-+            _dialogPanel.Arrange(new UIBox2(dialogX, dialogY, dialogX + dialogW, dialogY + dialogH));
-+        }
-+
-+        DumpArrangeDebugInfo(finalSize, Math.Clamp(_cfg.GetCVar(CVars.MobileControlsScale), 0.6f, 3.0f));
-+
++        var scale = MobileDisplaySizing.ControlsScale(UIScale, finalSize.Y * UIScale, _cfg.GetCVar(CVars.MobileControlsScale));
++        var stickScale = Math.Clamp(_cfg.GetCVar(CVars.MobileThumbstickScale), 0.5f, 2);
++        _thumbstick.Radius = 75 * scale * stickScale;
++        _thumbstick.KnobRadius = 32 * scale * stickScale;
++        _thumbstick.Deadzone = 10 * scale * stickScale;
++        var size = new Vector2(_thumbstick.Radius * 2 + 20);
++        var position = new Vector2(35 * scale, finalSize.Y * 0.66f - _thumbstick.Radius);
++        position = Vector2.Clamp(position, Vector2.Zero, Vector2.Max(Vector2.Zero, finalSize - size));
++        _settingsButton.Measure(new Vector2(44, 36));
++        _settingsButton.Arrange(UIBox2.FromDimensions(new Vector2(MathF.Max(0, (finalSize.X - 44) / 2), 8), new Vector2(44, 36)));
++        _thumbstick.DefaultPosition = position;
++        _thumbstick.Measure(size);
++        _thumbstick.Arrange(UIBox2.FromDimensions(position, size));
 +        return finalSize;
 +    }
 +}
-
 diff --git a/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs b/Robust.Client/UserInterface/Mobile/MobileDisplaySettingsWindow.cs
 new file mode 100644
 index 0000000..e342e41
@@ -2788,7 +1645,6 @@ index 0000000..e342e41
 +        UpdateLabel();
 +    }
 +}
-
 diff --git a/Robust.Client/UserInterface/Mobile/MobileDisplaySizing.cs b/Robust.Client/UserInterface/Mobile/MobileDisplaySizing.cs
 new file mode 100644
 index 0000000..b4d5757
@@ -2817,10 +1673,10 @@ index 0000000..b4d5757
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileTouchController.cs b/Robust.Client/UserInterface/Mobile/MobileTouchController.cs
 new file mode 100644
-index 0000000..888d85f
+index 0000000..801c670
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileTouchController.cs
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,93 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Diagnostics;
@@ -2892,6 +1748,8 @@ index 0000000..888d85f
 +        }
 +    }
 +
++    public void InvalidateTouch(long id) => _state.Invalidate(id);
++
 +    public void Update()
 +    {
 +        var eye = _eyes.CurrentEye;
@@ -2910,383 +1768,6 @@ index 0000000..888d85f
 +    {
 +        _state.Cancel();
 +        _worldTouches.Clear();
-+    }
-+}
-diff --git a/Robust.Client/UserInterface/Mobile/PojavActionButton.cs b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
-new file mode 100644
-index 0000000..76ca27d
---- /dev/null
-+++ b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
-@@ -0,0 +1,371 @@
-+using System;
-+using System.Numerics;
-+using Robust.Client.Graphics;
-+using Robust.Client.Input;
-+using Robust.Client.UserInterface;
-+using Robust.Client.UserInterface.Controls;
-+using Robust.Shared.Input;
-+using Robust.Shared.IoC;
-+using Robust.Shared.Maths;
-+
-+namespace Robust.Client.UserInterface.Mobile;
-+
-+public enum PojavSpecialAction
-+{
-+    None,
-+    Primary,
-+    Secondary,
-+    KeyboardToggle,
-+    Throw,
-+    Custom
-+}
-+
-+public sealed partial class PojavActionButton : Control
-+{
-+    [Dependency] private IInputManager _inputManager = default!;
-+    [Dependency] private IClyde _clyde = default!;
-+
-+    public string Id { get; set; } = string.Empty;
-+    public Vector2 DefaultPosition { get; set; }
-+    public Vector2? CustomPosition { get; set; }
-+    public float? CustomSize { get; set; }
-+    public bool IsCustom { get; set; }
-+    public bool IsEditMode { get; set; }
-+    public event Action? OnPositionChanged;
-+    public event Action<PojavActionButton>? OnConfigureRequested;
-+
-+    public string Text
-+    {
-+        get => _label.Text ?? string.Empty;
-+        set => _label.Text = value;
-+    }
-+
-+    public Color AccentColor { get; set; } = new Color(210, 210, 210);
-+    public bool IsToggle { get; set; }
-+    public bool IsToggled { get; set; }
-+
-+    public Keyboard.Key? ActionKey { get; set; }
-+    public PojavSpecialAction SpecialAction { get; set; } = PojavSpecialAction.None;
-+    public Action? OnPressed { get; set; }
-+    public Action? OnReleased { get; set; }
-+
-+    public void ResetToggle()
-+    {
-+        if (IsToggle && IsToggled)
-+        {
-+            IsToggled = false;
-+            _isPressed = false;
-+            ExecuteUp();
-+            OnReleased?.Invoke();
-+        }
-+    }
-+
-+    private readonly Label _label;
-+    private bool _isPressed;
-+    private Vector2? _dragTouchOffset;
-+    private Vector2 _pressStartGlobal;
-+    private bool _hasDragged;
-+    private static bool _keyboardActive;
-+
-+    public PojavActionButton(string text, Keyboard.Key? actionKey = null, PojavSpecialAction special = PojavSpecialAction.None, string id = "", bool isCustom = false)
-+    {
-+        IoCManager.InjectDependencies(this);
-+
-+        Id = string.IsNullOrEmpty(id) ? text.ToLowerInvariant() : id;
-+        ActionKey = actionKey;
-+        SpecialAction = special;
-+        IsCustom = isCustom;
-+        MouseFilter = MouseFilterMode.Stop;
-+
-+        _label = new Label
-+        {
-+            Text = text,
-+            HorizontalAlignment = HAlignment.Center,
-+            VerticalAlignment = VAlignment.Center,
-+            FontColorOverride = Color.White,
-+            MouseFilter = MouseFilterMode.Ignore
-+        };
-+        AddChild(_label);
-+    }
-+
-+    protected override Vector2 ArrangeOverride(Vector2 finalSize)
-+    {
-+        _label.Arrange(new UIBox2(Vector2.Zero, finalSize));
-+        return finalSize;
-+    }
-+
-+    private long? _activeFingerId;
-+
-+    public void OnTouchDown(long fingerId)
-+    {
-+        if (IsEditMode)
-+            return;
-+
-+        _activeFingerId = fingerId;
-+        if (IsToggle)
-+        {
-+            IsToggled = !IsToggled;
-+            _isPressed = IsToggled;
-+            if (IsToggled)
-+                ExecuteDown();
-+            else
-+                ExecuteUp();
-+            OnPressed?.Invoke();
-+            return;
-+        }
-+
-+        _isPressed = true;
-+        ExecuteDown();
-+        OnPressed?.Invoke();
-+    }
-+
-+    public void OnTouchUp(long fingerId)
-+    {
-+        if (IsEditMode || IsToggle)
-+            return;
-+
-+        if (_activeFingerId == fingerId || _isPressed)
-+        {
-+            _activeFingerId = null;
-+            if (_isPressed)
-+            {
-+                _isPressed = false;
-+                ExecuteUp();
-+                OnReleased?.Invoke();
-+            }
-+        }
-+    }
-+
-+    public void Release()
-+    {
-+        _activeFingerId = null;
-+        if (_isPressed && !IsToggle)
-+        {
-+            _isPressed = false;
-+            ExecuteUp();
-+            OnReleased?.Invoke();
-+        }
-+    }
-+
-+    protected internal override bool HasPoint(Vector2 point)
-+    {
-+        const float slop = 4f;
-+        var size = Size;
-+        return point.X >= -slop && point.X <= size.X + slop && point.Y >= -slop && point.Y <= size.Y + slop;
-+    }
-+
-+    protected internal override void ControlFocusExited()
-+    {
-+        base.ControlFocusExited();
-+        if (IsEditMode)
-+        {
-+            _dragTouchOffset = null;
-+        }
-+    }
-+
-+    protected internal override void KeyBindDown(GUIBoundKeyEventArgs args)
-+    {
-+        base.KeyBindDown(args);
-+
-+        if (args.Function != EngineKeyFunctions.UIClick)
-+            return;
-+
-+        if (IsEditMode)
-+        {
-+            UserInterfaceManager.ControlFocused = this;
-+            _pressStartGlobal = GlobalPosition + args.RelativePosition;
-+            _dragTouchOffset = args.RelativePosition;
-+            _hasDragged = false;
-+            args.Handle();
-+            return;
-+        }
-+
-+        if (_activeFingerId != null)
-+        {
-+            args.Handle();
-+            return;
-+        }
-+
-+        if (IsToggle)
-+        {
-+            IsToggled = !IsToggled;
-+            _isPressed = IsToggled;
-+            if (IsToggled)
-+                ExecuteDown();
-+            else
-+                ExecuteUp();
-+            OnPressed?.Invoke();
-+            args.Handle();
-+            return;
-+        }
-+
-+        _isPressed = true;
-+        ExecuteDown();
-+        OnPressed?.Invoke();
-+        args.Handle();
-+    }
-+
-+    protected internal override void MouseMove(GUIMouseMoveEventArgs args)
-+    {
-+        base.MouseMove(args);
-+
-+        if (IsEditMode && _dragTouchOffset != null)
-+        {
-+            var currentGlobal = GlobalPosition + args.RelativePosition;
-+            var delta = currentGlobal - _pressStartGlobal;
-+            if (delta.LengthSquared() > 36f)
-+            {
-+                _hasDragged = true;
-+            }
-+
-+            var parentGlobal = Parent?.GlobalPosition ?? Vector2.Zero;
-+            var newGlobal = currentGlobal - _dragTouchOffset.Value;
-+            var newLocal = newGlobal - parentGlobal;
-+            CustomPosition = newLocal;
-+            Arrange(new UIBox2(newLocal, newLocal + Size));
-+            OnPositionChanged?.Invoke();
-+        }
-+    }
-+
-+    protected internal override void KeyBindUp(GUIBoundKeyEventArgs args)
-+    {
-+        base.KeyBindUp(args);
-+
-+        if (args.Function != EngineKeyFunctions.UIClick)
-+            return;
-+
-+        if (IsEditMode)
-+        {
-+            if (UserInterfaceManager.ControlFocused == this)
-+                UserInterfaceManager.ControlFocused = null;
-+
-+            var wasDragged = _hasDragged;
-+            _dragTouchOffset = null;
-+            OnPositionChanged?.Invoke();
-+
-+            if (!wasDragged)
-+            {
-+                OnConfigureRequested?.Invoke(this);
-+            }
-+
-+            args.Handle();
-+            return;
-+        }
-+
-+        if (_activeFingerId != null)
-+        {
-+            args.Handle();
-+            return;
-+        }
-+
-+        if (IsToggle)
-+        {
-+            args.Handle();
-+            return;
-+        }
-+
-+        if (!_isPressed)
-+            return;
-+
-+        _isPressed = false;
-+        ExecuteUp();
-+        OnReleased?.Invoke();
-+        args.Handle();
-+    }
-+
-+    private void ExecuteDown()
-+    {
-+        if (SpecialAction == PojavSpecialAction.KeyboardToggle)
-+        {
-+            _keyboardActive = !_keyboardActive;
-+            if (_keyboardActive)
-+                _clyde.MainWindow?.TextInputStart();
-+            else
-+                _clyde.MainWindow?.TextInputStop();
-+            return;
-+        }
-+
-+        if (SpecialAction == PojavSpecialAction.Secondary)
-+        {
-+            MobileControlsOverlay.IsSecondaryActive = true;
-+            return;
-+        }
-+
-+        if (SpecialAction == PojavSpecialAction.Throw)
-+        {
-+            _inputManager.KeyDown(new KeyEventArgs(Keyboard.Key.Control, false, false, false, false, false, 0));
-+            _inputManager.KeyDown(new KeyEventArgs(Keyboard.Key.Q, false, false, false, false, false, 0));
-+            return;
-+        }
-+
-+        if (ActionKey.HasValue)
-+        {
-+            _inputManager.KeyDown(new KeyEventArgs(ActionKey.Value, false, false, false, false, false, 0));
-+        }
-+    }
-+
-+    private void ExecuteUp()
-+    {
-+        if (SpecialAction == PojavSpecialAction.KeyboardToggle)
-+            return;
-+
-+        if (SpecialAction == PojavSpecialAction.Secondary)
-+        {
-+            MobileControlsOverlay.IsSecondaryActive = false;
-+            return;
-+        }
-+
-+        if (SpecialAction == PojavSpecialAction.Throw)
-+        {
-+            _inputManager.KeyUp(new KeyEventArgs(Keyboard.Key.Q, false, false, false, false, false, 0));
-+            _inputManager.KeyUp(new KeyEventArgs(Keyboard.Key.Control, false, false, false, false, false, 0));
-+            return;
-+        }
-+
-+        if (ActionKey.HasValue)
-+        {
-+            _inputManager.KeyUp(new KeyEventArgs(ActionKey.Value, false, false, false, false, false, 0));
-+        }
-+    }
-+
-+    protected internal override void Draw(DrawingHandleScreen handle)
-+    {
-+        base.Draw(handle);
-+
-+        // DrawingHandleScreen uses pixels; control input/layout uses UI units.
-+        var center = (Vector2)PixelSize / 2f;
-+        var radius = MathF.Min(PixelSize.X, PixelSize.Y) / 2f - 1.5f;
-+        var active = _isPressed || IsToggled;
-+
-+        var bg = active
-+            ? new Color(AccentColor.R, AccentColor.G, AccentColor.B, 0.78f)
-+            : new Color(18, 22, 32).WithAlpha(0.72f);
-+
-+        var border = IsEditMode
-+            ? new Color(255, 215, 0, 240)
-+            : (active ? Color.White : new Color(AccentColor.R, AccentColor.G, AccentColor.B, 0.65f));
-+
-+        var drawRadius = active ? (radius - 1f) : radius;
-+
-+        handle.DrawCircle(center, drawRadius, bg, true);
-+        handle.DrawCircle(center, drawRadius, border, false);
-+
-+        if (active)
-+        {
-+            handle.DrawCircle(center, drawRadius * 0.75f, new Color(255, 255, 255, 40), false);
-+        }
-+
-+        if (IsToggle && IsToggled)
-+        {
-+            var badgePos = center + new Vector2(radius * 0.6f, -radius * 0.6f);
-+            handle.DrawCircle(badgePos, 4f * UIScale, Color.White, true);
-+            handle.DrawCircle(badgePos, 2.5f * UIScale, new Color(46, 204, 113), true);
-+        }
-+
-+        if (IsEditMode)
-+        {
-+            var box = UIBox2.FromDimensions(Vector2.Zero, PixelSize);
-+            handle.DrawRect(box, new Color(255, 215, 0, 140), false);
-+        }
 +    }
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/ThumbstickState.cs b/Robust.Client/UserInterface/Mobile/ThumbstickState.cs
@@ -3742,7 +2223,6 @@ index 0000000..9c394ba
 +        }
 +    }
 +}
-
 diff --git a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs b/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
 index 274aa2a..48560bc 100644
 --- a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
@@ -3887,7 +2367,7 @@ index 274aa2a..48560bc 100644
          // Update which control is considered hovered.
          var newHovered = MouseGetControl(mouseMoveEventArgs.Position);
          SetHovered(newHovered);
-@@ -583,4 +688,17 @@ internal partial class UserInterfaceManager
+@@ -583,4 +688,19 @@ internal partial class UserInterfaceManager
  
          return pos - control.GlobalPosition;
      }
@@ -3896,12 +2376,14 @@ index 274aa2a..48560bc 100644
 +    {
 +        if (!OperatingSystem.IsAndroid() && MobileOverlay == null) return;
 +        _mobileTouch ??= new Mobile.MobileTouchController(_clyde, _eyeManager,
-+            point => _modalStack.Count == 0 && !Mobile.MobileControlsOverlay.IsEditMode
++            point => _modalStack.Count == 0
 +                && MobileOverlay?.BlocksWorldGestures != true && _eyeManager.CurrentMap != MapId.Nullspace
 +                && MouseGetControl(point) is IViewportControl viewport && ReferenceEquals(viewport, _eyeManager.MainViewport),
 +            () => { _focusedControls.Remove(EngineKeyFunctions.UIClick); ControlFocused = null; });
 +        var overlayHandled = MobileOverlay?.HandleTouch(args) == true;
 +        var scale = _windowsToRoot.TryGetValue(args.Coordinates.Window, out var root) ? root.UIScale : 1;
++        if (_mobileServerUi?.HandleTouch(args, MouseGetControl(args.Coordinates), _mobileTouch.InvalidateTouch) == true)
++            overlayHandled = true;
 +        _mobileTouch.Handle(args, overlayHandled, scale);
 +    }
  }
@@ -3968,15 +2450,16 @@ diff --git a/Robust.Client/UserInterface/UserInterfaceManager.cs b/Robust.Client
 index 57c86c3..6b6d7c1 100644
 --- a/Robust.Client/UserInterface/UserInterfaceManager.cs
 +++ b/Robust.Client/UserInterface/UserInterfaceManager.cs
-@@ -52,6 +52,7 @@ namespace Robust.Client.UserInterface
+@@ -52,6 +52,8 @@ namespace Robust.Client.UserInterface
          [Dependency] private ILogManager _logManager = default!;
          [Dependency] private IRuntimeLog _runtime = default!;
          [Dependency] private IClipboardManager _clipboard = null!;
 +        public Mobile.MobileControlsOverlay? MobileOverlay { get; private set; }
++        private Mobile.MobileServerUiAdapter? _mobileServerUi;
  
          private IAudioSource? _clickSource;
          private IAudioSource? _hoverSource;
-@@ -189,6 +190,14 @@ namespace Robust.Client.UserInterface
+@@ -189,6 +191,14 @@ namespace Robust.Client.UserInterface
              RootControl.AddChild(WindowRoot);
  
              RootControl.CreateRootControls();
@@ -3991,11 +2474,26 @@ index 57c86c3..6b6d7c1 100644
          }
  
          public void InitializeTesting()
-@@ -212,6 +221,7 @@ namespace Robust.Client.UserInterface
+@@ -212,6 +222,22 @@ namespace Robust.Client.UserInterface
  
          public void FrameUpdate(FrameEventArgs args)
          {
 +            _mobileTouch?.Update();
++            var mobileUi = bool.TryParse(Environment.GetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI"), out var selectedMobileUi) && selectedMobileUi;
++            if (!mobileUi && _mobileServerUi != null)
++            {
++                _mobileServerUi.Dispose();
++                _mobileServerUi = null;
++            }
++            if (_mobileServerUi == null && MobileOverlay != null && ScreenRoot != null && mobileUi)
++            {
++                _mobileServerUi = new Mobile.MobileServerUiAdapter(ScreenRoot, StateRoot);
++                RootControl.AddChild(_mobileServerUi);
++                // Above game HUD, below windows and the touch overlay.
++                _mobileServerUi.SetPositionInParent(WindowRoot.GetPositionInParent());
++                LayoutContainer.SetAnchorPreset(_mobileServerUi, LayoutContainer.LayoutPreset.Wide);
++            }
++            _mobileServerUi?.Update(args.DeltaSeconds);
              using (_prof.Group("Update"))
              {
                  // Update hovered. Can't rely upon mouse movement due to New controls potentially coming up.
@@ -4374,5 +2872,540 @@ index 0000000..413d99a
 +    {
 +        base.ExitedTree();
 +        _process.Dispose();
++    }
++}
+diff --git a/Resources/Locale/en-US/mobile-ui.ftl b/Resources/Locale/en-US/mobile-ui.ftl
+new file mode 100644
+index 0000000..72fde67
+--- /dev/null
++++ b/Resources/Locale/en-US/mobile-ui.ftl
+@@ -0,0 +1,6 @@
++mobile-chat-title = Chat
++mobile-chat-toggle = Show / hide chat
++mobile-chat-expand = Expand / compact chat
++mobile-chat-placeholder = Message…
++mobile-chat-send = Send message
++mobile-menu-toggle = Collapse / expand menu
+diff --git a/Resources/Locale/ru-RU/mobile-ui.ftl b/Resources/Locale/ru-RU/mobile-ui.ftl
+new file mode 100644
+index 0000000..065de5c
+--- /dev/null
++++ b/Resources/Locale/ru-RU/mobile-ui.ftl
+@@ -0,0 +1,6 @@
++mobile-chat-title = Чат
++mobile-chat-toggle = Показать / скрыть чат
++mobile-chat-expand = Развернуть / уменьшить чат
++mobile-chat-placeholder = Сообщение…
++mobile-chat-send = Отправить сообщение
++mobile-menu-toggle = Свернуть / развернуть меню
+diff --git a/Robust.Client/UserInterface/Mobile/MobileChatDock.cs b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
+new file mode 100644
+index 0000000..39e9837
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
+@@ -0,0 +1,86 @@
++using System;
++using System.Numerics;
++using Robust.Client.Graphics;
++using Robust.Client.UserInterface.Controls;
++using Robust.Shared.Localization;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++internal sealed class MobileChatDock : PanelContainer
++{
++    private readonly BoxContainer _column;
++    private readonly Control _content;
++    private readonly LineEdit _input;
++    private readonly MobileHudIconButton _expand;
++    private readonly MobileHudIconButton _hide;
++    private readonly Label _title;
++    public bool Expanded { get; private set; }
++    public bool Collapsed { get; private set; }
++
++    public MobileChatDock(Control content, LineEdit input)
++    {
++        Name = "MobileChatDock";
++        _content = content;
++        _input = input;
++        MouseFilter = MouseFilterMode.Stop;
++        PanelOverride = new StyleBoxFlat { BackgroundColor = Color.FromHex("#202128e8"),
++            BorderColor = Color.FromHex("#46485f"), BorderThickness = new Thickness(1) };
++        _column = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical,
++            SeparationOverride = 2 };
++        AddChild(_column);
++        var header = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Horizontal,
++            SeparationOverride = 2 };
++        _column.AddChild(header);
++        _hide = new MobileHudIconButton(MobileHudIconButton.Symbol.Chat, "MobileChatToggle",
++            Loc.GetString("mobile-chat-toggle"));
++        _hide.OnPressed += _ => SetCollapsed(!Collapsed);
++        header.AddChild(_hide);
++        _title = new Label { Text = Loc.GetString("mobile-chat-title"), HorizontalExpand = true,
++            VerticalAlignment = VAlignment.Center, Margin = new Thickness(6, 0) };
++        header.AddChild(_title);
++        _expand = new MobileHudIconButton(MobileHudIconButton.Symbol.Expand, "MobileChatExpand",
++            Loc.GetString("mobile-chat-expand"));
++        _expand.OnPressed += _ => { Expanded = !Expanded; _expand.Icon = Expanded
++            ? MobileHudIconButton.Symbol.Compact : MobileHudIconButton.Symbol.Expand; UpdateLayout(); };
++        header.AddChild(_expand);
++        content.HorizontalExpand = true;
++        content.VerticalExpand = true;
++        _column.AddChild(content);
++        input.OnFocusEnter += InputFocused;
++    }
++
++    private void InputFocused(LineEdit.LineEditEventArgs _) => SetCollapsed(false);
++
++    public void SetCollapsed(bool value)
++    {
++        if (Collapsed == value) return;
++        if (value) _input.ReleaseKeyboardFocus();
++        Collapsed = value;
++        _content.Visible = !value;
++        _title.Visible = !value;
++        _expand.Visible = !value;
++        UpdateLayout();
++    }
++
++    private void UpdateLayout()
++    {
++        InvalidateMeasure();
++        Parent?.InvalidateMeasure();
++        Parent?.InvalidateArrange();
++    }
++
++    protected override void Dispose(bool disposing)
++    {
++        if (disposing) _input.OnFocusEnter -= InputFocused;
++        base.Dispose(disposing);
++    }
++
++    public Vector2 DockSize(Vector2 available, float maxWidth = float.PositiveInfinity)
++    {
++        if (Collapsed) return new Vector2(42);
++        var width = MathF.Min(available.X - 24, Math.Clamp(available.X * (Expanded ? 0.56f : 0.36f), 300, Expanded ? 680 : 460));
++        var height = Expanded ? Math.Clamp(available.Y * 0.62f, 170, 430) : 172;
++        return Vector2.Max(new Vector2(42), new Vector2(MathF.Min(width, maxWidth), MathF.Min(height, available.Y - 72)));
++    }
++}
+diff --git a/Robust.Client/UserInterface/Mobile/MobileHudIconButton.cs b/Robust.Client/UserInterface/Mobile/MobileHudIconButton.cs
+new file mode 100644
+index 0000000..60c5fe1
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileHudIconButton.cs
+@@ -0,0 +1,60 @@
++using System;
++using System.Numerics;
++using Robust.Client.Graphics;
++using Robust.Client.UserInterface.Controls;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++// ContainerButton retains the active content stylesheet and normal UI input.
++internal sealed class MobileHudIconButton : ContainerButton
++{
++    public enum Symbol { Chat, Send, Expand, Compact, Fold, Unfold }
++    public Symbol Icon { get; set; }
++
++    public MobileHudIconButton(Symbol icon, string name, string tooltip)
++    {
++        Icon = icon;
++        Name = name;
++        ToolTip = tooltip;
++        MinSize = new Vector2(40);
++    }
++
++    protected internal override void Draw(DrawingHandleScreen handle)
++    {
++        base.Draw(handle);
++        var size = PixelSize;
++        var centre = (Vector2)size / 2;
++        var unit = MathF.Min(size.X, size.Y) * 0.23f;
++        var color = Disabled ? new Color(0.4f, 0.4f, 0.5f) : Color.FromHex("#b5c4d2");
++        void Line(float x1, float y1, float x2, float y2) => handle.DrawLine(
++            centre + new Vector2(x1, y1) * unit, centre + new Vector2(x2, y2) * unit, color);
++        switch (Icon)
++        {
++            case Symbol.Chat:
++                Line(-1, -0.8f, 1, -0.8f); Line(1, -0.8f, 1, 0.6f);
++                Line(1, 0.6f, -0.4f, 0.6f); Line(-0.4f, 0.6f, -1, 1);
++                Line(-1, 1, -1, -0.8f); Line(-0.6f, -0.2f, 0.6f, -0.2f);
++                break;
++            case Symbol.Send:
++                Line(-1, -0.8f, 1, 0); Line(1, 0, -1, 0.8f);
++                Line(-1, 0.8f, -0.5f, 0); Line(-0.5f, 0, -1, -0.8f); Line(-0.5f, 0, 1, 0);
++                break;
++            case Symbol.Expand:
++                Line(-1, -0.3f, -1, -1); Line(-1, -1, -0.3f, -1);
++                Line(1, 0.3f, 1, 1); Line(1, 1, 0.3f, 1);
++                Line(-1, -1, -0.2f, -0.2f); Line(1, 1, 0.2f, 0.2f);
++                break;
++            case Symbol.Compact:
++                Line(-1, -0.3f, -0.3f, -0.3f); Line(-0.3f, -0.3f, -0.3f, -1);
++                Line(1, 0.3f, 0.3f, 0.3f); Line(0.3f, 0.3f, 0.3f, 1);
++                break;
++            case Symbol.Fold:
++                Line(0.5f, -0.8f, -0.5f, 0); Line(-0.5f, 0, 0.5f, 0.8f);
++                break;
++            case Symbol.Unfold:
++                Line(-0.5f, -0.8f, 0.5f, 0); Line(0.5f, 0, -0.5f, 0.8f);
++                break;
++        }
++    }
++}
+diff --git a/Robust.Client/UserInterface/Mobile/MobileMenuStrip.cs b/Robust.Client/UserInterface/Mobile/MobileMenuStrip.cs
+new file mode 100644
+index 0000000..d95f951
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileMenuStrip.cs
+@@ -0,0 +1,45 @@
++using System;
++using System.Linq;
++using System.Numerics;
++using Robust.Client.UserInterface.Controls;
++using Robust.Shared.Localization;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++internal sealed class MobileMenuStrip : BoxContainer
++{
++    private readonly GridContainer _icons;
++    private readonly MobileHudIconButton _toggle;
++    public bool Collapsed { get; private set; }
++
++    public MobileMenuStrip()
++    {
++        Name = "MobileMenuStrip";
++        SeparationOverride = 4;
++        VerticalAlignment = VAlignment.Top;
++        _toggle = new MobileHudIconButton(MobileHudIconButton.Symbol.Fold, "MobileMenuToggle",
++            Loc.GetString("mobile-menu-toggle")) { VerticalAlignment = VAlignment.Top };
++        _toggle.OnPressed += _ => SetCollapsed(!Collapsed);
++        AddChild(_toggle);
++        _icons = new GridContainer { Name = "MobileMenuIcons", Columns = 7,
++            HSeparationOverride = 4, VSeparationOverride = 4 };
++        AddChild(_icons);
++    }
++
++    public void AddButton(Control button) => _icons.AddChild(button);
++    public void SetCollapsed(bool value)
++    {
++        Collapsed = value;
++        _icons.Visible = !value;
++        _toggle.Icon = value ? MobileHudIconButton.Symbol.Unfold : MobileHudIconButton.Symbol.Fold;
++        InvalidateMeasure();
++    }
++
++    protected override Vector2 MeasureOverride(Vector2 availableSize)
++    {
++        var width = Root == null ? availableSize.X : MathF.Min(availableSize.X, Root.Size.X * 0.48f);
++        _icons.Columns = Math.Clamp((int)((width - 44) / 48), 1, 7);
++        return base.MeasureOverride(availableSize);
++    }
++}
+diff --git a/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
+new file mode 100644
+index 0000000..8851c07
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
+@@ -0,0 +1,296 @@
++using System;
++using System.Collections.Generic;
++using System.Linq;
++using System.Numerics;
++using Robust.Client.Graphics;
++using Robust.Client.Input;
++using Robust.Client.UserInterface.Controls;
++using Robust.Shared.Localization;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++// Adapt live upstream/server widgets, not Content DLLs or their networking.
++// Sources remain in their screen so controller/widget lookup keeps working.
++internal sealed class MobileServerUiAdapter : Control
++{
++    private readonly Control _screenRoot;
++    private readonly Control _stateRoot;
++    private readonly List<ChatBinding> _chats = new();
++    private readonly List<MenuBinding> _menus = new();
++    private float _scanIn;
++    private int _layoutStamp;
++    private readonly Dictionary<long, (OutputPanel Output, float Start, float Last, bool Dragging)> _scrolls = new();
++
++    public MobileServerUiAdapter(Control screenRoot, Control stateRoot)
++    {
++        Name = "MobileServerUiAdapter";
++        _screenRoot = screenRoot;
++        _stateRoot = stateRoot;
++        MouseFilter = MouseFilterMode.Ignore;
++    }
++
++    private static IEnumerable<Control> Tree(Control control)
++    {
++        yield return control;
++        foreach (var child in control.Children)
++            foreach (var nested in Tree(child)) yield return nested;
++    }
++
++    private static bool TypeIs(Control control, string name)
++    {
++        for (var type = control.GetType(); type != null; type = type.BaseType)
++            if (type.Name == name) return true;
++        return false;
++    }
++
++    public void Update(float delta)
++    {
++        foreach (var chat in _chats.ToArray())
++            if (!chat.Source.IsInsideTree || chat.Source.Disposed)
++            {
++                chat.Restore();
++                _chats.Remove(chat);
++                InvalidateMeasure();
++            }
++        foreach (var menu in _menus.ToArray())
++            if (!menu.Source.IsInsideTree || menu.Source.Disposed)
++            {
++                menu.Restore();
++                _menus.Remove(menu);
++            }
++        _scanIn -= delta;
++        if (_scanIn <= 0)
++        {
++            _scanIn = 0.25f;
++            // Snapshot before changing child collections. Check base type names
++            // and original named controls; no dependency on a fork namespace.
++            var controls = Tree(_screenRoot).Concat(Tree(_stateRoot)).ToArray();
++            foreach (var source in controls)
++            {
++                // Never adapt our own presentation containers recursively.
++                if (source.GetType().Assembly == typeof(Control).Assembly) continue;
++                if ((TypeIs(source, "ChatBox") || source.Children.Any(c => c.Name == "ChatWindowPanel")) && !_chats.Any(c => c.Source == source))
++                    AttachChat(source);
++                if ((TypeIs(source, "GameTopMenuBar") || source.Children.Any(c => TypeIs(c, "MenuButton"))) && !_menus.Any(m => m.Source == source))
++                    AttachMenu(source);
++            }
++        }
++        foreach (var chat in _chats)
++        {
++            chat.Source.Visible = false;
++            chat.Dock.Visible = AncestorsVisible(chat.Source.Parent);
++        }
++        foreach (var menu in _menus) menu.Enforce();
++        var layout = new HashCode();
++        foreach (var control in _menus.Select(m => m.Source))
++        {
++            layout.Add(control.VisibleInTree); layout.Add(control.GlobalPosition); layout.Add(control.Size);
++        }
++        var stamp = layout.ToHashCode();
++        if (stamp != _layoutStamp) { _layoutStamp = stamp; InvalidateMeasure(); InvalidateArrange(); }
++    }
++
++    private static bool AncestorsVisible(Control? control)
++    {
++        while (control != null)
++        {
++            if (!control.Visible) return false;
++            control = control.Parent;
++        }
++        return true;
++    }
++
++    private void AttachChat(Control source)
++    {
++        var controls = Tree(source).ToArray();
++        var panel = controls.FirstOrDefault(c => c.Name == "ChatWindowPanel");
++        var input = controls.OfType<LineEdit>().FirstOrDefault(c => c.Name == "Input");
++        var output = controls.OfType<OutputPanel>().FirstOrDefault();
++        if (panel?.Parent == null || input?.Parent == null || output == null) return;
++        // Require the original channel/filter controls; never replace an
++        // unrelated text field or bypass server permission/channel handling.
++        if (!controls.Any(c => c.Name == "ChannelSelector") || !controls.Any(c => c.Name == "FilterButton")) return;
++        var binding = new ChatBinding(source, panel, input, output);
++        _chats.Add(binding);
++        AddChild(binding.Dock);
++        InvalidateMeasure();
++    }
++
++    private void AttachMenu(Control source)
++    {
++        var buttons = source.Children.Where(c => TypeIs(c, "MenuButton")).ToArray();
++        if (buttons.Length == 0) return;
++        _menus.Add(new MenuBinding(source, buttons));
++    }
++
++    public bool HandleTouch(TouchFingerEventArgs args, Control? hit, Action<long> cancelClick)
++    {
++        var id = args.FingerId;
++        var y = args.Coordinates.Position.Y;
++        if (args.Action == TouchFingerAction.Down)
++        {
++            _scrolls.Remove(id);
++            for (var control = hit; control != null; control = control.Parent)
++            {
++                if (control is not OutputPanel output || !_chats.Any(c => c.Output == output)) continue;
++                _scrolls[id] = (output, y, y, false);
++                break;
++            }
++            return false;
++        }
++        if (!_scrolls.TryGetValue(id, out var state)) return false;
++        if (args.Action != TouchFingerAction.Motion || !state.Output.VisibleInTree)
++        {
++            _scrolls.Remove(id);
++            return state.Dragging;
++        }
++        var dragging = state.Dragging || MathF.Abs(y - state.Start) >= 10 * UIScale;
++        if (dragging)
++        {
++            if (!state.Dragging) cancelClick(id);
++            state.Output.ScrollByDelta(y - (state.Dragging ? state.Last : state.Start));
++        }
++        _scrolls[id] = (state.Output, state.Start, y, dragging);
++        return dragging;
++    }
++
++    protected override Vector2 MeasureOverride(Vector2 availableSize)
++    {
++        foreach (var chat in _chats) chat.Dock.Measure(chat.Dock.DockSize(availableSize));
++        return Vector2.Zero;
++    }
++
++    protected override Vector2 ArrangeOverride(Vector2 finalSize)
++    {
++        var top = 56f;
++        foreach (var chat in _chats)
++        {
++            var desired = chat.Dock.DockSize(finalSize);
++            var left = 12f;
++            var right = finalSize.X - 12;
++            foreach (var menu in _menus)
++                if (menu.Source.VisibleInTree && menu.Source.GlobalPosition.Y < top + desired.Y)
++                    left = MathF.Max(left, menu.Source.GlobalPosition.X + menu.Source.Size.X + 12);
++            var size = chat.Dock.DockSize(finalSize, MathF.Max(42, right - left));
++            chat.Dock.Measure(size);
++            chat.Dock.Arrange(UIBox2.FromDimensions(new Vector2(MathF.Max(left, right - size.X), top), size));
++            top += size.Y + 6;
++        }
++        return finalSize;
++    }
++
++    protected override void Dispose(bool disposing)
++    {
++        if (disposing)
++        {
++            foreach (var chat in _chats) chat.Restore();
++            foreach (var menu in _menus) menu.Restore();
++            _chats.Clear(); _menus.Clear();
++        }
++        base.Dispose(disposing);
++    }
++
++    private sealed class ChatBinding
++    {
++        public readonly Control Source;
++        public readonly MobileChatDock Dock;
++        public readonly OutputPanel Output;
++        private readonly Control _panel;
++        private readonly Control _originalParent;
++        private readonly int _index;
++        private readonly bool _visible;
++        private readonly bool _panelVisible;
++        private readonly LineEdit _input;
++        private readonly string? _placeholder;
++        private readonly Vector2 _inputMin;
++        private readonly MobileHudIconButton _send;
++
++        public ChatBinding(Control source, Control panel, LineEdit input, OutputPanel output)
++        {
++            Source = source; Output = output; _panel = panel; _input = input;
++            _originalParent = panel.Parent!; _index = panel.GetPositionInParent(); _visible = source.Visible; _panelVisible = panel.Visible;
++            _placeholder = input.PlaceHolder; _inputMin = input.MinSize;
++            _originalParent.RemoveChild(panel);
++            Dock = new MobileChatDock(panel, input);
++            input.PlaceHolder = Loc.GetString("mobile-chat-placeholder");
++            input.MinHeight = MathF.Max(38, input.MinHeight);
++            _send = new MobileHudIconButton(MobileHudIconButton.Symbol.Send, "MobileChatSend", Loc.GetString("mobile-chat-send"));
++            // Same entry point as Enter/IME: history, selected channel, typing
++            // indicator, validation and the server's SendMessage stay intact.
++            _send.OnPressed += _ => input.ForceSubmitText();
++            input.Parent!.AddChild(_send);
++            source.Visible = false;
++        }
++
++        public void Restore()
++        {
++            _send.Dispose();
++            if (!_input.Disposed) { _input.PlaceHolder = _placeholder; _input.MinSize = _inputMin; }
++            if (!_panel.Disposed)
++            {
++                _panel.Parent?.RemoveChild(_panel);
++                _panel.Visible = _panelVisible;
++                if (!_originalParent.Disposed)
++                {
++                    _originalParent.AddChild(_panel);
++                    _panel.SetPositionInParent(Math.Min(_index, _originalParent.ChildCount - 1));
++                }
++                else _panel.Dispose();
++            }
++            if (!Source.Disposed) Source.Visible = _visible;
++            Dock.Dispose();
++        }
++    }
++
++    private sealed class MenuBinding
++    {
++        public readonly Control Source;
++        private readonly MobileMenuStrip _strip = new();
++        private readonly List<(Control Button, int Index, Vector2 Min, Vector2 Set)> _buttons = new();
++        private readonly List<(Control Label, bool Visible)> _labels = new();
++        private readonly List<(TextureRect Icon, bool Shrink, Vector2 Scale)> _icons = new();
++        private readonly Vector2 _min;
++        private readonly Thickness _margin;
++
++        public MenuBinding(Control source, Control[] buttons)
++        {
++            Source = source; _min = source.MinSize; _margin = source.Margin;
++            foreach (var button in buttons)
++            {
++                _buttons.Add((button, button.GetPositionInParent(), button.MinSize, button.SetSize));
++                foreach (var label in Tree(button).OfType<Label>()) _labels.Add((label, label.Visible));
++                foreach (var icon in Tree(button).OfType<TextureRect>())
++                    _icons.Add((icon, icon.CanShrink, icon.TextureScale));
++            }
++            foreach (var button in buttons) { source.RemoveChild(button); _strip.AddButton(button); }
++            source.AddChild(_strip);
++            Enforce();
++        }
++
++        public void Enforce()
++        {
++            Source.MinSize = Vector2.Zero;
++            Source.Margin = _margin;
++            foreach (var item in _buttons) { item.Button.MinSize = new Vector2(40); item.Button.SetSize = new Vector2(40); }
++            foreach (var item in _labels) item.Label.Visible = false;
++            foreach (var item in _icons) { item.Icon.CanShrink = true; item.Icon.TextureScale = new Vector2(0.35f); }
++        }
++
++        public void Restore()
++        {
++            foreach (var item in _labels) if (!item.Label.Disposed) item.Label.Visible = item.Visible;
++            foreach (var item in _icons) if (!item.Icon.Disposed) { item.Icon.CanShrink = item.Shrink; item.Icon.TextureScale = item.Scale; }
++            foreach (var item in _buttons)
++            {
++                if (item.Button.Disposed) continue;
++                item.Button.Parent?.RemoveChild(item.Button);
++                item.Button.MinSize = item.Min; item.Button.SetSize = item.Set;
++                if (!Source.Disposed) { Source.AddChild(item.Button); item.Button.SetPositionInParent(Math.Min(item.Index, Source.ChildCount - 1)); }
++                else item.Button.Dispose();
++            }
++            if (!Source.Disposed) { Source.MinSize = _min; Source.Margin = _margin; }
++            _strip.Dispose();
++        }
 +    }
 +}

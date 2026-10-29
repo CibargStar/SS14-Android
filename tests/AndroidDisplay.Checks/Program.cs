@@ -44,6 +44,12 @@ try
     Check(launcher.Read() == new GameDisplaySettings(1.25f, true), "launcher reads in-game changes without a stale process cache");
     var reopened = new GameDisplaySettingsStore(root);
     Check(reopened.Read() == new GameDisplaySettings(1.25f, true), "scale and visibility survive restarting both processes");
+    launcher.Write(new GameDisplaySettings(0.75f, false, false));
+    Check(!game.Read().MobileUi, "launcher opt-out reaches the game process");
+    game.Write(game.Read() with { UiScale = 1.25f, ShowControls = true });
+    Check(!launcher.Read().MobileUi, "in-game scale/controls save preserves original-server-UI opt-out");
+    File.WriteAllText(Path.Combine(root, "android-display.json"), "{\"UiScale\":0.75,\"ShowControls\":false}");
+    Check(reopened.Read().MobileUi, "existing preferences migrate to mobile UI without losing scale/visibility");
     File.WriteAllText(Path.Combine(root, "android-display.json"), "incomplete");
     Check(reopened.Read() == new GameDisplaySettings(), "damaged preferences recover to visible controls and automatic scale");
     launcher.Write(new GameDisplaySettings(float.NaN, false));
