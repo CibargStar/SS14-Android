@@ -6,9 +6,9 @@
 
 Обновите version code/display version, патчи, CHANGELOG и результаты проверок. Проверьте патчи на чистом upstream и сохраните source SHA запусков CI. Для изменений ввода обязателен [OriginalClient.VisualCheck](testing.md) на окончательном подписанном пакете: `SS14_CHECK_INPUT=1`, `SS14_CHECK_CAMERA=1`, `SS14_CHECK_THUMBSTICK=1`, `SS14_CHECK_HUD=1`, `SS14_CHECK_LOBBY=1`, `ROBUST_ANDROID_MOBILE_UI=true`. События должны проходить native SDL.
 
-Запустите `engine-versions.yml` с CSV точных версий, а `android-client.yml` — для `android-arm64` и `android-x64`, `runtime=coreclr`, `engine_channel=published` и новым `version_code`.
+Запустите `engine-versions.yml` с CSV точных версий, а `android-client.yml` — для `android-arm64` и `android-x64`, `runtime=coreclr` и новым `version_code`.
 
-Host и движки можно собирать параллельно; перед подписью APK замените его engine assets окончательными пакетами.
+Host и движки можно собирать параллельно. APK не содержит движков; их каталог публикуется отдельно.
 
 ## 2. Проверить и подписать движки
 
@@ -51,18 +51,16 @@ python3 scripts/create-update-catalog.py --official official-manifest.json \
 
 ## 4. Подготовить APK
 
-Сверьте SHA-256 скачанного CI-артефакта с GitHub. Замените только engine assets:
+Сверьте SHA-256 скачанного CI-артефакта с GitHub. Подпишите APK прежним сертификатом, сохраняя содержимое CI:
 
 ```bash
-python3 scripts/rebundle-apk-engines.py --apk host-from-ci.apk \
-  --engines artifacts/release-engines --public-key updates/android-engine-public.pub \
-  --version 294.0.0 --version 294.0.1 --output unsigned.apk
-zipalign -P 16 -f 4 unsigned.apk aligned.apk
+zipalign -P 16 -f 4 host-from-ci.apk aligned.apk
 apksigner sign --ks /private/channel.keystore --out signed.apk aligned.apk
 apksigner verify --print-certs-pem signed.apk
+python3 scripts/check-bootstrap-apk.py --apk signed.apk --abi arm64-v8a
 ```
 
-Используйте прежний APK-сертификат: иначе Android не установит обновление поверх старого. SHA-256 DER-сертификата должен совпадать с `updates/apk-certificate-sha256.txt`. Сверьте package ID `io.ss14.android`, version code, ABI, CoreCLR, engine key, встроенные версии и оригинальную иконку. Все записи host вне engine assets должны совпадать с CI. `zipalign -P 16` не исправляет ELF-выравнивание зависимостей.
+SHA-256 DER-сертификата должен совпадать с `updates/apk-certificate-sha256.txt`. Сверьте package ID `io.ss14.android`, version code, ABI, CoreCLR, закреплённый engine key и оригинальную иконку. В APK не должно быть `assets/engines/`; все записи вне подписей должны совпадать с CI. `zipalign -P 16` не исправляет ELF-выравнивание зависимостей.
 
 ## 5. Опубликовать APK и каталог
 

@@ -22,30 +22,16 @@ export SS14_ANDROID_ABI=arm64-v8a
 
 SDK platform, build-tools и NDK должны быть установлены через `sdkmanager`. Для x64 используйте `SS14_ANDROID_ABI=x86_64` и `RuntimeIdentifier=android-x64` ниже.
 
-## Native-библиотеки и движок
+## Native-библиотеки для APK
 
 ```bash
 bash scripts/prepare-original-launcher.sh
 bash scripts/build-native-sdl.sh
 bash scripts/build-native-libraries.sh
 bash scripts/build-native-sodium.sh
-bash scripts/build-engine.sh
 ```
 
 Скрипты используют закреплённые native-исходники и патч RobustToolbox. Повторный запуск распознаёт применённый патч; посторонние изменения submodule сохраняются.
-
-Для локальной сборки создайте собственный Ed25519-ключ в новом файле. Приватный ключ в Git не добавляется.
-
-```bash
-mkdir -p .keys
-chmod 700 .keys
-test ! -e .keys/local-engine.pem && \
-  openssl genpkey -algorithm ED25519 -out .keys/local-engine.pem
-chmod 600 .keys/local-engine.pem
-python3 scripts/package-android-engine.py --key .keys/local-engine.pem --version 294.0.1
-```
-
-Пакет, подпись, публичный ключ и bundled-manifest появятся в `artifacts/engines`. Этот ключ используется только вашей сборкой; ключ релизного канала описан в [публикации](releasing.md).
 
 ## APK
 
@@ -59,6 +45,27 @@ bash scripts/build-original-launcher.sh \
 Результат: `src/SS14.Android/bin/Debug/net10.0-android/android-arm64/*-Signed.apk`. Скрипт передаёт `AndroidLauncher=true` для restore и сборки зависимых проектов.
 
 Релизные APK используют экспериментальный CoreCLR .NET 10; `UseMonoRuntime=true` включает диагностический Mono. AOT, interpreter и trimming отключены для загрузки серверных DLL и генерации кода во время выполнения.
+
+## Сборка движка отдельно
+
+APK не требует предварительной сборки движка и не включает пакеты из `artifacts/engines`. Ключ релизного канала берётся из `updates/android-engine-public.pub`.
+
+```bash
+bash scripts/build-engine.sh
+```
+
+Для локальной сборки создайте собственный Ed25519-ключ в новом файле. Приватный ключ в Git не добавляется.
+
+```bash
+mkdir -p .keys
+chmod 700 .keys
+test ! -e .keys/local-engine.pem && \
+  openssl genpkey -algorithm ED25519 -out .keys/local-engine.pem
+chmod 600 .keys/local-engine.pem
+python3 scripts/package-android-engine.py --key .keys/local-engine.pem --version 294.0.1
+```
+
+Пакет, подпись, публичный ключ и bundled-manifest появятся в `artifacts/engines`. Для своего канала нужно отдельно настроить публичный ключ APK и адрес каталога. Релизный канал описан в [публикации](releasing.md).
 
 ## Другая точная версия движка
 
