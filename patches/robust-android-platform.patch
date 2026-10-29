@@ -1484,10 +1484,10 @@ index 0000000..1d00f75
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileChatDock.cs b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
 new file mode 100644
-index 0000000..f63f3f6
+index 0000000..746d965
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,100 @@
 +using System;
 +using System.Numerics;
 +using Robust.Client.Graphics;
@@ -1496,6 +1496,8 @@ index 0000000..f63f3f6
 +using Robust.Shared.Maths;
 +
 +namespace Robust.Client.UserInterface.Mobile;
++
++internal enum MobileChatMode { Hidden, Minimal, Full }
 +
 +internal sealed class MobileChatDock : PanelContainer
 +{
@@ -1506,8 +1508,12 @@ index 0000000..f63f3f6
 +    private readonly MobileHudIconButton _hide;
 +    private readonly Label _title;
 +    public event Action? LayoutChanged;
-+    public bool Expanded { get; private set; }
-+    public bool Collapsed { get; private set; }
++    private readonly StyleBox _visiblePanel;
++    private readonly StyleBox _hiddenPanel = new StyleBoxEmpty();
++    private MobileChatMode _lastVisibleMode = MobileChatMode.Minimal;
++    public MobileChatMode Mode { get; private set; } = MobileChatMode.Minimal;
++    public bool Expanded => Mode == MobileChatMode.Full;
++    public bool Collapsed => Mode == MobileChatMode.Hidden;
 +
 +    public MobileChatDock(Control content, LineEdit input)
 +    {
@@ -1515,8 +1521,9 @@ index 0000000..f63f3f6
 +        _content = content;
 +        _input = input;
 +        MouseFilter = MouseFilterMode.Stop;
-+        PanelOverride = new StyleBoxFlat { BackgroundColor = Color.FromHex("#202128e8"),
++        _visiblePanel = new StyleBoxFlat { BackgroundColor = Color.FromHex("#202128e8"),
 +            BorderColor = Color.FromHex("#46485f"), BorderThickness = new Thickness(1) };
++        PanelOverride = _visiblePanel;
 +        _column = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical,
 +            SeparationOverride = 2 };
 +        AddChild(_column);
@@ -1532,8 +1539,7 @@ index 0000000..f63f3f6
 +        header.AddChild(_title);
 +        _expand = new MobileHudIconButton(MobileHudIconButton.Symbol.Expand, "MobileChatExpand",
 +            Loc.GetString("mobile-chat-expand"));
-+        _expand.OnPressed += _ => { Expanded = !Expanded; _expand.Icon = Expanded
-+            ? MobileHudIconButton.Symbol.Compact : MobileHudIconButton.Symbol.Expand; UpdateLayout(); };
++        _expand.OnPressed += _ => SetMode(Expanded ? MobileChatMode.Minimal : MobileChatMode.Full);
 +        header.AddChild(_expand);
 +        content.HorizontalExpand = true;
 +        content.VerticalExpand = true;
@@ -1543,14 +1549,20 @@ index 0000000..f63f3f6
 +
 +    private void InputFocused(LineEdit.LineEditEventArgs _) => SetCollapsed(false);
 +
-+    public void SetCollapsed(bool value)
++    public void SetCollapsed(bool value) => SetMode(value ? MobileChatMode.Hidden : _lastVisibleMode);
++
++    public void SetMode(MobileChatMode mode)
 +    {
-+        if (Collapsed == value) return;
-+        if (value) _input.ReleaseKeyboardFocus();
-+        Collapsed = value;
-+        _content.Visible = !value;
-+        _title.Visible = !value;
-+        _expand.Visible = !value;
++        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
++        if (Mode == mode) return;
++        if (mode == MobileChatMode.Hidden) _input.ReleaseKeyboardFocus();
++        else _lastVisibleMode = mode;
++        Mode = mode;
++        _content.Visible = !Collapsed;
++        _title.Visible = !Collapsed;
++        _expand.Visible = !Collapsed;
++        _expand.Icon = Expanded ? MobileHudIconButton.Symbol.Compact : MobileHudIconButton.Symbol.Expand;
++        PanelOverride = Collapsed ? _hiddenPanel : _visiblePanel;
 +        UpdateLayout();
 +    }
 +
@@ -1570,10 +1582,10 @@ index 0000000..f63f3f6
 +
 +    public Vector2 DockSize(Vector2 available, float maxWidth = float.PositiveInfinity)
 +    {
-+        if (Collapsed) return new Vector2(42);
-+        var width = MathF.Min(available.X - 24, Math.Clamp(available.X * (Expanded ? 0.56f : 0.36f), 300, Expanded ? 680 : 460));
++        if (Collapsed) return new Vector2(40);
++        var width = MathF.Min(available.X, Math.Clamp(available.X * (Expanded ? 0.56f : 0.36f), 300, Expanded ? 680 : 460));
 +        var height = Expanded ? Math.Clamp(available.Y * 0.62f, 170, 430) : 172;
-+        return Vector2.Max(new Vector2(42), new Vector2(MathF.Min(width, maxWidth), MathF.Min(height, available.Y - 72)));
++        return Vector2.Max(new Vector2(42), new Vector2(MathF.Min(width, maxWidth), MathF.Min(height, available.Y)));
 +    }
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
@@ -1899,10 +1911,10 @@ index 0000000..b4d5757
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileHudIconButton.cs b/Robust.Client/UserInterface/Mobile/MobileHudIconButton.cs
 new file mode 100644
-index 0000000..60c5fe1
+index 0000000..91f1a00
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileHudIconButton.cs
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,64 @@
 +using System;
 +using System.Numerics;
 +using Robust.Client.Graphics;
@@ -1922,6 +1934,10 @@ index 0000000..60c5fe1
 +        Icon = icon;
 +        Name = name;
 +        ToolTip = tooltip;
++        // Touch controls act on contact. Hover tooltips cannot be used as
++        // an extra interaction step on a phone and must never cover them.
++        TooltipDelay = float.PositiveInfinity;
++        Mode = ActionMode.Press;
 +        MinSize = new Vector2(40);
 +    }
 +
@@ -2016,10 +2032,10 @@ index 0000000..d95f951
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
 new file mode 100644
-index 0000000..72eed76
+index 0000000..e112c78
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
-@@ -0,0 +1,334 @@
+@@ -0,0 +1,415 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Linq;
@@ -2199,15 +2215,21 @@ index 0000000..72eed76
 +
 +    protected override Vector2 ArrangeOverride(Vector2 finalSize)
 +    {
-+        var top = 56f;
++        var top = 0f;
 +        foreach (var chat in _chats)
 +        {
 +            var desired = chat.Dock.DockSize(finalSize);
 +            var left = 12f;
-+            var right = finalSize.X - 12;
++            var right = finalSize.X;
 +            foreach (var menu in _menus)
 +                if (menu.Source.VisibleInTree && menu.Source.GlobalPosition.X < finalSize.X / 2 && menu.Source.GlobalPosition.Y < top + desired.Y)
 +                    left = MathF.Max(left, menu.Source.GlobalPosition.X + menu.Source.Size.X + 12);
++            if (!chat.Dock.Collapsed && Root != null)
++            {
++                var settings = Tree(Root).FirstOrDefault(control => control.Name == "MobileDisplayButton");
++                if (settings is { VisibleInTree: true } && settings.GlobalPosition.Y < top + desired.Y)
++                    left = MathF.Max(left, settings.GlobalPosition.X + settings.Size.X + 8);
++            }
 +            var size = chat.Dock.DockSize(finalSize, MathF.Max(42, right - left));
 +            chat.Dock.Measure(size);
 +            var global = new Vector2(MathF.Max(left, right - size.X), top);
@@ -2303,13 +2325,80 @@ index 0000000..72eed76
 +        }
 +    }
 +
++    private sealed class IconLayout
++    {
++        private readonly TextureRect _icon;
++        private readonly Control _button;
++        private readonly Control _parent;
++        private readonly int _index;
++        private readonly bool _shrink;
++        private readonly Vector2 _scale, _size, _minimum;
++        private readonly Thickness _margin;
++        private readonly HAlignment _horizontal;
++        private readonly VAlignment _vertical;
++        private readonly TextureRect.StretchMode _stretch;
++        private readonly MouseFilterMode _mouseFilter;
++        private Vector2 _centeringOffset;
++
++        public IconLayout(TextureRect icon, Control button)
++        {
++            _icon = icon; _button = button; _parent = icon.Parent!; _index = icon.GetPositionInParent();
++            _shrink = icon.CanShrink; _scale = icon.TextureScale; _size = icon.SetSize; _minimum = icon.MinSize;
++            _margin = icon.Margin; _horizontal = icon.HorizontalAlignment; _vertical = icon.VerticalAlignment;
++            _stretch = icon.Stretch; _mouseFilter = icon.MouseFilter;
++        }
++
++        public void Center()
++        {
++            _parent.RemoveChild(_icon);
++            _button.AddChild(_icon);
++            Enforce();
++        }
++
++        public void Enforce()
++        {
++            // Original end-cap skins can have asymmetric content padding.
++            // Use the last arranged geometry even when an ancestor is queued
++            // for layout, then compensate the icon without changing the skin.
++            if (_button.Size.X > 0 && _button.Size.Y > 0 && _icon.Size.X > 0 && _icon.Size.Y > 0)
++            {
++                var delta = _button.Size / 2 - (_icon.Position + _icon.Size / 2);
++                if (delta.LengthSquared() > 0.0001f) _centeringOffset += delta;
++            }
++            if (!_icon.CanShrink) _icon.CanShrink = true;
++            if (_icon.MinSize != Vector2.Zero) _icon.MinSize = Vector2.Zero;
++            if (_icon.SetSize != new Vector2(24)) _icon.SetSize = new Vector2(24);
++            var margin = new Thickness(_centeringOffset.X, _centeringOffset.Y, -_centeringOffset.X, -_centeringOffset.Y);
++            if (!_icon.Margin.Equals(margin)) _icon.Margin = margin;
++            if (_icon.HorizontalAlignment != HAlignment.Center) _icon.HorizontalAlignment = HAlignment.Center;
++            if (_icon.VerticalAlignment != VAlignment.Center) _icon.VerticalAlignment = VAlignment.Center;
++            if (_icon.Stretch != TextureRect.StretchMode.KeepAspectCentered) _icon.Stretch = TextureRect.StretchMode.KeepAspectCentered;
++            _icon.MouseFilter = MouseFilterMode.Ignore;
++        }
++
++        public void Restore()
++        {
++            if (_icon.Disposed) return;
++            _icon.Parent?.RemoveChild(_icon);
++            _icon.CanShrink = _shrink; _icon.TextureScale = _scale; _icon.SetSize = _size; _icon.MinSize = _minimum;
++            _icon.Margin = _margin; _icon.HorizontalAlignment = _horizontal; _icon.VerticalAlignment = _vertical;
++            _icon.Stretch = _stretch; _icon.MouseFilter = _mouseFilter;
++            if (!_parent.Disposed)
++            {
++                _parent.AddChild(_icon);
++                _icon.SetPositionInParent(Math.Min(_index, _parent.ChildCount - 1));
++            }
++            else _icon.Dispose();
++        }
++    }
++
 +    private sealed class MenuBinding
 +    {
 +        public readonly Control Source;
 +        private readonly MobileMenuStrip _strip = new();
 +        private readonly List<(Control Button, int Index, Vector2 Min, Vector2 Set)> _buttons = new();
 +        private readonly List<(Control Label, bool Visible)> _labels = new();
-+        private readonly List<(TextureRect Icon, bool Shrink, Vector2 Scale)> _icons = new();
++        private readonly List<IconLayout> _icons = new();
 +        private readonly Vector2 _min;
 +        private readonly Thickness _margin;
 +
@@ -2320,8 +2409,12 @@ index 0000000..72eed76
 +            {
 +                _buttons.Add((button, button.GetPositionInParent(), button.MinSize, button.SetSize));
 +                foreach (var label in Tree(button).OfType<Label>()) _labels.Add((label, label.Visible));
-+                foreach (var icon in Tree(button).OfType<TextureRect>())
-+                    _icons.Add((icon, icon.CanShrink, icon.TextureScale));
++                foreach (var icon in Tree(button).OfType<TextureRect>().ToArray())
++                {
++                    var layout = new IconLayout(icon, button);
++                    _icons.Add(layout);
++                    layout.Center();
++                }
 +            }
 +            foreach (var button in buttons) { source.RemoveChild(button); _strip.AddButton(button); }
 +            source.AddChild(_strip);
@@ -2330,17 +2423,21 @@ index 0000000..72eed76
 +
 +        public void Enforce()
 +        {
-+            Source.MinSize = Vector2.Zero;
-+            Source.Margin = _margin;
-+            foreach (var item in _buttons) { item.Button.MinSize = new Vector2(40); item.Button.SetSize = new Vector2(40); }
++            if (Source.MinSize != Vector2.Zero) Source.MinSize = Vector2.Zero;
++            if (!Source.Margin.Equals(_margin)) Source.Margin = _margin;
++            foreach (var item in _buttons)
++            {
++                if (item.Button.MinSize != new Vector2(40)) item.Button.MinSize = new Vector2(40);
++                if (item.Button.SetSize != new Vector2(40)) item.Button.SetSize = new Vector2(40);
++            }
 +            foreach (var item in _labels) item.Label.Visible = false;
-+            foreach (var item in _icons) { item.Icon.CanShrink = true; item.Icon.TextureScale = new Vector2(0.35f); }
++            foreach (var item in _icons) item.Enforce();
 +        }
 +
 +        public void Restore()
 +        {
 +            foreach (var item in _labels) if (!item.Label.Disposed) item.Label.Visible = item.Visible;
-+            foreach (var item in _icons) if (!item.Icon.Disposed) { item.Icon.CanShrink = item.Shrink; item.Icon.TextureScale = item.Scale; }
++            foreach (var item in _icons) item.Restore();
 +            foreach (var item in _buttons)
 +            {
 +                if (item.Button.Disposed) continue;

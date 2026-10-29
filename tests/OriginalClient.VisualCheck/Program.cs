@@ -353,6 +353,14 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     Console.WriteLine("HUD PASS " + name);
                 }
                 object HudFind(string name) => Descendants(Get(ui, "RootControl")!).Single(c => Get(c, "Name")?.ToString() == name);
+                void CornerCheck(string mode)
+                {
+                    var dock = HudFind("MobileChatDock");
+                    var pos = Vector(Get(dock, "GlobalPixelPosition")!); var size = Vector(Get(dock, "PixelSize")!);
+                    var root = Get(ui, "RootControl")!;
+                    HudCheck(MathF.Abs(pos.Y) <= 1 && MathF.Abs(pos.X + size.X - Number(Get(root, "PixelSize")!, "X")) <= 1,
+                        mode + " chat is flush with the top-right corner");
+                }
                 void HudTap(object control)
                 {
                     var point = Vector(Get(control, "GlobalPixelPosition")!) + Vector(Get(control, "PixelSize")!) / 2;
@@ -364,6 +372,8 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 object? originalInput = null;
                 object? originalBar = null;
                 object? firstButton = null;
+                object? originalIcon = null;
+                object? originalIconParent = null;
                 await OnMain(() =>
                 {
                     Get(ui, "StateRoot")!.GetType().GetProperty("Visible")!.SetValue(Get(ui, "StateRoot"), false);
@@ -374,6 +384,8 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     originalInput = Get(Get(originalChat, "ChatInput")!, "Input")!;
                     originalBar = Descendants(originalScreen).Single(c => c.GetType().Name == "GameTopMenuBar");
                     firstButton = Descendants(originalBar).First(c => c.GetType().Name == "MenuButton");
+                    originalIcon = Descendants(firstButton).First(c => c.GetType().Name == "TextureRect");
+                    originalIconParent = Get(originalIcon, "Parent");
                     var addLine = originalChat.GetType().GetMethod("AddLine")!;
                     var color = addLine.GetParameters()[1].ParameterType.GetProperty("White")!.GetValue(null);
                     for (var i = 0; i < 70; i++) addLine.Invoke(originalChat, [$"{i:00} Local: Тест мобильного чата — upstream channels, history and filters.", color]);
@@ -394,8 +406,39 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     HudCheck(Descendants(originalBar!).Contains(firstButton!), "menu retains the original action button instance");
                     return true;
                 });
+                await OnMain(() =>
+                {
+                    CornerCheck("minimal");
+                    HudCheck(Get(HudFind("MobileChatDock"), "Mode")!.ToString() == "Minimal", "chat starts in explicit minimal mode");
+                    var icons = Descendants(originalBar!).Where(c => c.GetType().Name == "TextureRect" && Get(c, "VisibleInTree") is true).ToArray();
+                    HudCheck(icons.Length > 0 && icons.All(icon =>
+                    {
+                        var button = Get(icon, "Parent")!;
+                        var a = Vector(Get(icon, "GlobalPixelPosition")!) + Vector(Get(icon, "PixelSize")!) / 2;
+                        var b = Vector(Get(button, "GlobalPixelPosition")!) + Vector(Get(button, "PixelSize")!) / 2;
+                        return button.GetType().Name == "MenuButton" && Vector2.Distance(a, b) <= 1;
+                    }), "every original menu texture is centred horizontally and vertically: " + string.Join("; ", icons.Select(icon =>
+                        Get(icon, "GlobalPixelPosition") + " " + Get(icon, "PixelSize") + " parent " + Get(Get(icon, "Parent")!, "GlobalPixelPosition") + " " + Get(Get(icon, "Parent")!, "PixelSize"))));
+                    return true;
+                });
                 await Capture("mobile-hud-compact");
-                await OnMain(() => { HudTap(HudFind("MobileMenuToggle")); return true; });
+                Vector2 heldPoint = default;
+                await OnMain(() =>
+                {
+                    var toggle = HudFind("MobileMenuToggle");
+                    heldPoint = Vector(Get(toggle, "GlobalPixelPosition")!) + Vector(Get(toggle, "PixelSize")!) / 2;
+                    RawTouch("Down", 971, heldPoint);
+                    HudCheck(Get(HudFind("MobileMenuStrip"), "Collapsed") is true, "menu collapses on initial finger down without tooltip or release delay");
+                    return true;
+                });
+                await Task.Delay(600);
+                await OnMain(() =>
+                {
+                    HudCheck(!Descendants(Get(ui, "RootControl")!).Any(c => c.GetType().Name == "Tooltip" && Get(c, "VisibleInTree") is true), "held collapse control never shows a hover tooltip");
+                    RawTouch("Up", 971, heldPoint);
+                    HudCheck(Get(HudFind("MobileMenuStrip"), "Collapsed") is true, "finger release does not toggle the menu a second time");
+                    return true;
+                });
                 await Task.Delay(250);
                 await OnMain(() =>
                 {
@@ -409,6 +452,11 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 await OnMain(() =>
                 {
                     HudCheck(Get(HudFind("MobileChatDock"), "Collapsed") is true && Get(originalPanel!, "VisibleInTree") is false, "chat collapses to its restore icon");
+                    CornerCheck("hidden");
+                    var hidden = HudFind("MobileChatDock");
+                    HudCheck(Get(hidden, "Mode")!.ToString() == "Hidden" && Number(hidden, "Width") <= 40 && Number(hidden, "Height") <= 40
+                        && Descendants(hidden).Count(c => Get(c, "VisibleInTree") is true && c.GetType().Name == "MobileHudIconButton") == 1,
+                        "hidden chat occupies only one restore button with no header or content");
                     HudTap(HudFind("MobileChatToggle"));
                     return true;
                 });
@@ -416,13 +464,19 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 await OnMain(() =>
                 {
                     HudCheck(Get(originalInput!, "Text")?.ToString() == "draft ; original channel", "collapsing chat preserves the original draft");
-                    HudTap(HudFind("MobileChatExpand"));
+                    var expand = HudFind("MobileChatExpand");
+                    heldPoint = Vector(Get(expand, "GlobalPixelPosition")!) + Vector(Get(expand, "PixelSize")!) / 2;
+                    RawTouch("Down", 972, heldPoint);
+                    HudCheck(Get(HudFind("MobileChatDock"), "Expanded") is true, "chat expands on initial finger down");
                     return true;
                 });
                 await Task.Delay(300);
                 await OnMain(() =>
                 {
+                    RawTouch("Up", 972, heldPoint);
                     HudCheck(Get(HudFind("MobileChatDock"), "Expanded") is true && Number(HudFind("MobileChatDock"), "Height") > 250, "chat expands within phone viewport");
+                    CornerCheck("full");
+                    HudCheck(Get(HudFind("MobileChatDock"), "Mode")!.ToString() == "Full", "full mode remains active after finger release");
                     var output = Descendants(originalPanel!).Single(c => c.GetType().Name == "OutputPanel");
                     var scrollbar = Descendants(output).Single(c => c.GetType().Name == "VScrollBar");
                     var before = Number(scrollbar, "Value");
@@ -450,15 +504,34 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 {
                     var dock = HudFind("MobileChatDock");
                     var p = Vector(Get(dock, "GlobalPixelPosition")!); var size = Vector(Get(dock, "PixelSize")!);
-                    var buttons = Descendants(overlay).Where(c => c.GetType().Name == "VirtualThumbstick" && Get(c, "VisibleInTree") is true);
+                    var buttons = Descendants(overlay).Where(c => (c.GetType().Name == "VirtualThumbstick" || Get(c, "Name")?.ToString() == "MobileDisplayButton") && Get(c, "VisibleInTree") is true);
                     HudCheck(buttons.All(c =>
                     {
                         var q = Vector(Get(c, "GlobalPixelPosition")!); var s = Vector(Get(c, "PixelSize")!);
                         return MathF.Min(p.X + size.X, q.X + s.X) <= MathF.Max(p.X, q.X) || MathF.Min(p.Y + size.Y, q.Y + s.Y) <= MathF.Max(p.Y, q.Y);
-                    }), "only movement stick and UI remain; expanded chat does not overlap movement");
+                    }), "expanded chat stays clear of both movement stick and UI settings button");
                     return true;
                 });
                 await Capture("mobile-hud-expanded");
+                await OnMain(() => { HudTap(HudFind("MobileChatToggle")); return true; });
+                await Task.Delay(250);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(HudFind("MobileChatDock"), "Mode")!.ToString() == "Hidden", "full chat can be fully hidden");
+                    HudTap(HudFind("MobileChatToggle")); return true;
+                });
+                await Task.Delay(250);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(HudFind("MobileChatDock"), "Mode")!.ToString() == "Full", "restore button returns to previous full mode");
+                    HudTap(HudFind("MobileChatExpand")); return true;
+                });
+                await Task.Delay(250);
+                await OnMain(() =>
+                {
+                    HudCheck(Get(HudFind("MobileChatDock"), "Mode")!.ToString() == "Minimal", "full chat can return to minimal mode");
+                    return true;
+                });
                 await OnMain(() => { Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "false"); return true; });
                 await Task.Delay(300);
                 await OnMain(() =>
@@ -466,6 +539,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     HudCheck(!Descendants(Get(ui, "RootControl")!).Any(c => c.GetType().Name == "MobileServerUiAdapter"), "opt-out removes all mobile HUD presentation");
                     HudCheck(Get(originalChat!, "Visible") is true && ReferenceEquals(Get(originalChat!, "Parent"), originalScreen) && ReferenceEquals(Get(originalPanel!, "Parent"), originalChat), "opt-out restores original server chat ownership and visibility");
                     HudCheck(ReferenceEquals(Get(firstButton!, "Parent"), originalBar) && Descendants(firstButton!).Where(c => c.GetType().Name == "Label").All(c => Get(c, "Visible") is true), "opt-out restores original menu layout and keyboard legends");
+                    HudCheck(ReferenceEquals(Get(originalIcon!, "Parent"), originalIconParent), "opt-out restores original icon ownership and layout");
                     Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "true");
                     return true;
                 });
