@@ -713,6 +713,7 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 });
                 await Capture("mobile-lobby-compact");
                 object? characterGui = null, characterEditor = null, characterBody = null;
+                object? profileEditor = null, originalProfileTabs = null, originalProfileTabsParent = null;
                 await OnMain(() =>
                 {
                     LayoutTap(FindLayout("MobileLobbyTab"));
@@ -720,6 +721,13 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     var controller = ui.GetType().GetMethod("GetUIController")!.MakeGenericMethod(controllerType).Invoke(ui, null)!;
                     var pair = controllerType.GetMethod("EnsureGui", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(controller, null)!;
                     characterGui = pair.GetType().GetField("Item1")!.GetValue(pair)!;
+                    profileEditor = pair.GetType().GetField("Item2")!.GetValue(pair)!;
+                    var profileType = AppDomain.CurrentDomain.GetAssemblies().Single(a => a.GetName().Name == "Content.Shared")
+                        .GetType("Content.Shared.Preferences.HumanoidCharacterProfile", true)!;
+                    var fixtureProfile = profileType.GetMethod("DefaultWithSpecies")!.Invoke(null, [null, null]);
+                    profileEditor.GetType().GetMethod("SetProfile")!.Invoke(profileEditor, [fixtureProfile, (int?)0]);
+                    originalProfileTabs = Descendants(profileEditor).Single(c => Get(c, "Name")?.ToString() == "TabContainer");
+                    originalProfileTabsParent = Get(originalProfileTabs, "Parent");
                     characterEditor = Descendants(characterGui).Single(c => Get(c, "Name")?.ToString() == "CharEditor");
                     characterBody = Get(characterEditor, "Parent");
                     var state = Descendants(lobby!).Single(c => Get(c, "Name")?.ToString() == "CharacterSetupState");
@@ -733,6 +741,14 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 await OnMain(() =>
                 {
                     LayoutCheck(Descendants(FindLayout("MobileCharacterEditor")).Contains(characterEditor!), "character editor keeps the original server form");
+                    var preview = Descendants(profileEditor!).Single(c => Get(c, "Name")?.ToString() == "SpriteView");
+                    var entityManager = Resolve(shared.GetType("Robust.Shared.GameObjects.IEntityManager", true)!);
+                    var dummy = Get(preview, "PreviewDummy")!;
+                    var exists = entityManager.GetType().GetMethods().Single(m => m.Name == "EntityExists" && m.GetParameters()[0].ParameterType == dummy.GetType()).Invoke(entityManager, [dummy]);
+                    LayoutCheck(exists is true, "reparented original character preview retains a live entity");
+                    var direction = Get(preview, "OverrideDirection");
+                    LayoutTap(FindLayout("SpriteRotateLeft"));
+                    LayoutCheck(!Equals(direction, Get(preview, "OverrideDirection")), "preview rotation keeps the original server callback");
                     Inside(FindLayout("MobileCharacterPanel"), "character workspace");
                     Inside(FindLayout("MobileCharacterPickerTab"), "character list action");
                     Inside(FindLayout("MobileCharacterEditorTab"), "character editor action");
@@ -749,6 +765,76 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 });
                 await Task.Delay(400);
                 await Capture("mobile-character-editor");
+                foreach (var scale in new[] { 0f, 3f })
+                {
+                    await OnMain(() => { SetScale(scale); return true; });
+                    await Task.Delay(500);
+                    await OnMain(() =>
+                    {
+                        var profilePanel = FindLayout("MobileProfilePanel");
+                        var lobbySize = Vector(Get(Get(ui, "RootControl")!, "Size")!);
+                        LayoutCheck(Number(FindLayout("MobileCharacterPanel"), "Width") >= lobbySize.X - 32,
+                            $"character workspace uses the full screen instead of a lobby column: width={Number(FindLayout("MobileCharacterPanel"), "Width")}, root={lobbySize.X}");
+                        Inside(profilePanel, "bounded profile form");
+                        Inside(FindLayout("MobileProfilePreview"), "persistent character preview");
+                        Inside(FindLayout("MobileProfileFooter"), "persistent save/reset actions");
+                        LayoutCheck(!Descendants(FindLayout("MobileCharacterEditor")).Any(c =>
+                            c.GetType().Name == "ScrollContainer" && ReferenceEquals(Get(c, "Parent"), FindLayout("MobileCharacterEditor"))),
+                            "editor has no outer scrolling desktop canvas");
+                        LayoutTap(FindLayout("MobileProfileSections"));
+                        return true;
+                    });
+                    await Task.Delay(300);
+                    await OnMain(() =>
+                    {
+                        var title = originalProfileTabs!.GetType().GetMethod("GetActualTabTitle")!.Invoke(originalProfileTabs, [0])!.ToString();
+                        var option = Descendants(Get(ui, "RootControl")!).First(c => c.GetType().Name == "Button" && Get(c, "Text")?.ToString() == title && Get(c, "VisibleInTree") is true);
+                        LayoutTap(option);
+                        return true;
+                    });
+                    await Task.Delay(400);
+                    await OnMain(() =>
+                    {
+                        LayoutCheck(Get(FindLayout("MobileProfileContent"), "VisibleInTree") is true && Number(originalProfileTabs!, "CurrentTab") == 0,
+                            "native section selector opens the original appearance tab");
+                        var content = FindLayout("MobileProfileContent");
+                        var rect = Vector(Get(content, "GlobalPixelPosition")!); var size = Vector(Get(content, "PixelSize")!);
+                        var sliders = Descendants(originalProfileTabs!).Where(c => c.GetType().Name.Contains("Slider") && Get(c, "VisibleInTree") is true && Number(c, "Width") > 0).ToArray();
+                        foreach (var slider in sliders)
+                        {
+                            var p = Vector(Get(slider, "GlobalPixelPosition")!); var s = Vector(Get(slider, "PixelSize")!);
+                            LayoutCheck(p.X >= rect.X - 1 && p.X + s.X <= rect.X + size.X + 1,
+                                "appearance sliders fit the page without horizontal scrolling");
+                        }
+                        LayoutCheck(Descendants(originalProfileTabs!).Any(c => Get(c, "Name")?.ToString() == "SpeciesButton" && Get(c, "VisibleInTree") is true),
+                            "original appearance controls are available");
+                        return true;
+                    });
+                    await Capture(scale == 0 ? "profile-appearance-wide" : "profile-appearance-compact");
+                    await OnMain(() =>
+                    {
+                        var panel = FindLayout("MobileProfilePanel");
+                        var count = ((IEnumerable)Get(originalProfileTabs!, "Children")!).Cast<object>().Count();
+                        panel.GetType().GetMethod("SelectSection")!.Invoke(panel, [count + 1]);
+                        return true;
+                    });
+                    await Task.Delay(300);
+                    await OnMain(() =>
+                    {
+                        var colors = FindLayout("MobileProfileColors");
+                        Inside(colors, "bounded colors page");
+                        var position = Vector(Get(colors, "GlobalPixelPosition")!); var extent = Vector(Get(colors, "PixelSize")!);
+                        foreach (var slider in Descendants(colors).Where(c => c.GetType().Name.Contains("Slider") && Get(c, "VisibleInTree") is true && Number(c, "Width") > 0))
+                        {
+                            var x = Number(Get(slider, "GlobalPixelPosition")!, "X");
+                            LayoutCheck(x >= position.X - 1 && x + Number(Get(slider, "PixelSize")!, "X") <= position.X + extent.X + 1,
+                                "skin and eye sliders fit without sideways scrolling");
+                        }
+                        return true;
+                    });
+                    await Capture(scale == 0 ? "profile-colors-wide" : "profile-colors-compact");
+                }
+
                 await OnMain(() => { Environment.SetEnvironmentVariable("ROBUST_ANDROID_MOBILE_UI", "false"); return true; });
                 await Task.Delay(500);
                 await OnMain(() =>
@@ -757,6 +843,8 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                         "opt-out restores both original lobby panels and their split");
                     LayoutCheck(!Descendants(lobby!).Any(c => Get(c, "Name")?.ToString() == "MobileLobbyPanel"), "opt-out removes all mobile lobby layout");
                     LayoutCheck(ReferenceEquals(Get(characterEditor!, "Parent"), characterBody), "opt-out restores original character editor ownership");
+                    LayoutCheck(ReferenceEquals(Get(originalProfileTabs!, "Parent"), originalProfileTabsParent) && Get(originalProfileTabs!, "TabsVisible") is true,
+                        "opt-out restores the original profile layout and tabs");
                     LayoutCheck(((IEnumerable)Get(originalActionBar!, "Children")!).Cast<object>().SequenceEqual(originalActions!),
                         "opt-out restores exact server action order and instances");
                     ui.GetType().GetMethod("UnloadScreen")!.Invoke(ui, null);

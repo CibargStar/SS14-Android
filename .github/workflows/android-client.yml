@@ -23,7 +23,7 @@ on:
       version_code:
         description: Android package version code
         type: string
-        default: '11'
+        default: '12'
 
 permissions:
   contents: read

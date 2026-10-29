@@ -165,6 +165,17 @@ foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(10
         Assert(connect.Bounds.Left >= name.Bounds.Right - 1 && connect.Bounds.Width > 80,
             "server name and connect action do not overlap");
     }
+    var firstRow = rows[0];
+    var favoriteAction = firstRow.FindControl<Button>("FavoriteButton")!;
+    var serverModel = (SS14.Launcher.ViewModels.MainWindowTabs.ServerEntryViewModel)firstRow.DataContext!;
+    var wasFavorite = serverModel.IsFavorite;
+    var wasExpanded = serverModel.IsExpanded;
+    var favoritePoint = favoriteAction.TranslatePoint(new Point(favoriteAction.Bounds.Width / 2, favoriteAction.Bounds.Height / 2), host)!.Value;
+    host.MouseDown(favoritePoint, MouseButton.Left); host.MouseUp(favoritePoint, MouseButton.Left);
+    Dispatcher.UIThread.RunJobs();
+    Assert(serverModel.IsFavorite != wasFavorite && serverModel.IsExpanded == wasExpanded,
+        "quick favorite uses the original command without expanding the server card");
+    serverModel.FavoriteButtonPressed();
     var listView = main.GetVisualDescendants().OfType<SS14.Launcher.Views.MainWindowTabs.ServerListTabView>().Single();
     var toolbar = listView.FindControl<DockPanel>("SearchToolbar")!;
     Assert(toolbar.Bounds.Height >= 44 && toolbar.Bounds.Top < 8, "search stays at the top with touch targets");

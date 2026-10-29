@@ -1655,11 +1655,60 @@ index 4967680..310c7b0 100644
 +    </ScrollViewer>
    </DockPanel>
  </UserControl>
+diff --git a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml b/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml
+index 2ec44dc..b937c86 100644
+--- a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml
++++ b/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml
+@@ -28,7 +28,7 @@
+     </DockPanel>
+ 
+     <!-- Footer controls -->
+-    <DockPanel DockPanel.Dock="Bottom" LastChildFill="False" Margin="4 4 4 0" Height="32">
++    <DockPanel Name="HomeFooter" DockPanel.Dock="Bottom" LastChildFill="False" Margin="4 4 4 0" Height="32">
+       <Button DockPanel.Dock="Left" Classes="OpenRight"
+               Content="{loc:Loc tab-home-direct-connect}"
+               Command="{Binding DirectConnectPressed}" />
+@@ -47,7 +47,7 @@
+ 
+       <StackPanel IsVisible="{Binding FavoritesEmpty}"
+                   Orientation="Vertical" VerticalAlignment="Center">
+-        <TextBlock Text="{loc:Loc tab-home-favorites-guide}" HorizontalAlignment="Center"
++        <TextBlock Text="{loc:Loc tab-home-favorites-guide}" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="500"
+                    Margin="0 0 0 10" />
+         <Button Content="{loc:Loc tab-home-go-to-servers-tab}"
+                 Command="{Binding MainWindowViewModel.SelectTabServers}"
 diff --git a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
-index c2427a4..e6111d7 100644
+index c2427a4..cb3ddf6 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowTabs/HomePageView.xaml.cs
-@@ -40,7 +40,7 @@ public partial class HomePageView : UserControl
+@@ -1,4 +1,6 @@
+ using System;
++using System.Linq;
++using Avalonia;
+ using Avalonia.Controls;
+ using Avalonia.Interactivity;
+ using Avalonia.Platform.Storage;
+@@ -16,6 +18,19 @@ public partial class HomePageView : UserControl
+     public HomePageView()
+     {
+         InitializeComponent();
++        if (LauncherMobile.DataRoot != null)
++        {
++            var actions = HomeFooter.Children.ToArray();
++            HomeFooter.Children.Clear();
++            HomeFooter.Height = double.NaN;
++            var wrap = new WrapPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
++            foreach (var action in actions)
++            {
++                action.Margin = new Thickness(2);
++                wrap.Children.Add(action);
++            }
++            HomeFooter.Children.Add(wrap);
++        }
+     }
+ 
+     protected override void OnDataContextChanged(EventArgs e)
+@@ -40,7 +55,7 @@ public partial class HomePageView : UserControl
          if (_viewModel?.MainWindowViewModel is not { } mainVm)
              return;
  
@@ -1742,11 +1791,15 @@ index 6a51143..75d9beb 100644
      }
  }
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
-index 47e6715..a7626b9 100644
+index 47e6715..58ddaee 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
-@@ -25,7 +25,7 @@
+@@ -23,9 +23,11 @@
+   </UserControl.Styles>
+ 
    <Panel>
++    <views:AngleBox Name="CardBackground" IsVisible="False" IsHitTestVisible="False"
++                    Fill="{DynamicResource ThemeBackgroundBrush}" Margin="3" />
      <Expander Name="Expando" Classes="NoPad" IsExpanded="{Binding IsExpanded}">
        <Expander.Header>
 -        <Grid>
@@ -1754,7 +1807,7 @@ index 47e6715..a7626b9 100644
            <Grid.ColumnDefinitions>
              <ColumnDefinition Width="*" /> <!-- Server Name -->
              <ColumnDefinition Width="100" /> <!-- Round Time -->
-@@ -33,18 +33,18 @@
+@@ -33,18 +35,18 @@
              <ColumnDefinition Width="112" /> <!-- Connect -->
            </Grid.ColumnDefinitions>
  
@@ -1776,7 +1829,7 @@ index 47e6715..a7626b9 100644
              <Panel>
                <controls:TimerTextCell Value="{Binding RoundStartTime}"
                  IsVisible="{Binding RoundStatusString,Converter={x:Static StringConverters.IsNullOrEmpty}}" />
-@@ -55,11 +55,11 @@
+@@ -55,11 +57,11 @@
              </Panel>
            </Border>
  
@@ -1791,10 +1844,10 @@ index 47e6715..a7626b9 100644
                Content="{loc:Loc server-entry-connect}"
                Command="{Binding ConnectCommand}" />
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-index 554bf08..67f7e5f 100644
+index 554bf08..c190911 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-@@ -14,6 +14,33 @@ public partial class ServerEntryView : UserControl
+@@ -14,6 +14,45 @@ public partial class ServerEntryView : UserControl
      {
          InitializeComponent();
  
@@ -1802,8 +1855,10 @@ index 554bf08..67f7e5f 100644
 +        {
 +            // Reflow the original cells and commands; retain the same ViewModel.
 +            EntryHeader.RowDefinitions = new RowDefinitions("Auto,Auto");
-+            EntryHeader.ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,112");
-+            EntryHeader.MinHeight = 72;
++            CardBackground.IsVisible = true;
++            Expando.Margin = new Thickness(7, 5);
++            EntryHeader.ColumnDefinitions = new ColumnDefinitions("*,48,Auto,112");
++            EntryHeader.MinHeight = 76;
 +            Grid.SetColumnSpan(ServerNameCell, 3);
 +            Grid.SetRow(ServerStatusCell, 1);
 +            Grid.SetColumn(ServerStatusCell, 0);
@@ -1822,14 +1877,24 @@ index 554bf08..67f7e5f 100644
 +            {
 +                name.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
 +                name.MaxLines = 2;
++                name.FontWeight = Avalonia.Media.FontWeight.SemiBold;
 +            }
 +            if (ConnectCell.Child is Button connect) connect.MinHeight = 48;
++            // The original favorite command is reachable without expanding a row.
++            (FavoriteButton.Parent as Panel)?.Children.Remove(FavoriteButton);
++            FavoriteButtonIconLabel.Content = null;
++            FavoriteButton.MinWidth = FavoriteButton.MinHeight = 40;
++            FavoriteButton.Padding = new Thickness(8);
++            Grid.SetRow(FavoriteButton, 1);
++            Grid.SetColumn(FavoriteButton, 1);
++            EntryHeader.Children.Add(FavoriteButton);
++            ToolTip.SetTip(FavoriteButton, SS14.Launcher.Localization.LocalizationManager.Instance.GetString("tab-home-favorite-servers"));
 +        }
          Links.LayoutUpdated += ApplyStyle;
      }
  
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml
-index c3ef318..38f44e0 100644
+index c3ef318..6e38b19 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml
 @@ -19,7 +19,7 @@
@@ -1850,7 +1915,7 @@ index c3ef318..38f44e0 100644
        <Grid.RowDefinitions>
          <RowDefinition Height="*" MinHeight="180" /> <!-- Server List -->
          <RowDefinition Height="4" /> <!-- Grabber -->
-@@ -43,7 +43,7 @@
+@@ -43,20 +43,20 @@
        </Grid.RowDefinitions>
  
        <!-- Main server list table -->
@@ -1859,8 +1924,23 @@ index c3ef318..38f44e0 100644
                                        ListText="{Binding ListText}"
                                        SpinnerVisible="{Binding SpinnerVisible}"
                                        ShowHeader="True"
+                                       Classes.filtersClosed="{Binding !FiltersVisible}" />
+ 
+-      <GridSplitter Grid.Row="1" BorderThickness="0"
++      <GridSplitter Name="FilterSplitter" Grid.Row="1" BorderThickness="0"
+                     HorizontalAlignment="Stretch"
+                     ResizeDirection="Rows"
+                     IsVisible="{Binding FiltersVisible}">
+       </GridSplitter>
+ 
+       <!-- Filters dialog -->
+-      <Border Grid.Row="2" DockPanel.Dock="Bottom"
++      <Border Name="FiltersPane" Grid.Row="2" DockPanel.Dock="Bottom"
+               IsVisible="{Binding FiltersVisible}"
+               BoxShadow="0 -2 4 Black">
+         <Panel Background="{DynamicResource ThemeBackgroundBrush}">
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
-index 2768089..f37e192 100644
+index 2768089..075f275 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
 @@ -1,5 +1,4 @@
@@ -1869,7 +1949,7 @@ index 2768089..f37e192 100644
  
  namespace SS14.Launcher.Views.MainWindowTabs;
  
-@@ -8,5 +7,10 @@ public partial class ServerListTabView : UserControl
+@@ -8,5 +7,15 @@ public partial class ServerListTabView : UserControl
      public ServerListTabView()
      {
          InitializeComponent();
@@ -1877,7 +1957,12 @@ index 2768089..f37e192 100644
 +        DockPanel.SetDock(SearchToolbar, Dock.Top);
 +        SearchToolbar.Height = 48;
 +        ServerRows.ShowHeader = false;
-+        ServerPanels.RowDefinitions = new RowDefinitions("3*,4,2*");
++        ServerPanels.RowDefinitions = new RowDefinitions("*");
++        Grid.SetRow(ServerRows, 0);
++        Grid.SetRow(FiltersPane, 0);
++        Grid.SetRowSpan(FiltersPane, 1);
++        FiltersPane.ZIndex = 2;
++        FilterSplitter.IsVisible = false;
      }
  }
 diff --git a/SS14.Loader/MobileLoader.cs b/SS14.Loader/MobileLoader.cs
