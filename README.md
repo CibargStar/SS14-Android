@@ -11,7 +11,7 @@
 
 ## Скачать
 
-[**Скачать 0.7.0-dev**](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.7.0-dev) · [Установка и управление](docs/install.md) · [Изменения](CHANGELOG.md)
+[**Скачать 0.8.0-dev**](https://github.com/CibargStar/SS14-Android/releases/tag/android-host-0.8.0-dev) · [Установка и управление](docs/install.md) · [Изменения](CHANGELOG.md)
 
 Для Samsung S25 Ultra и других ARM64-телефонов выбирайте `arm64-coreclr.apk`. Вариант `x64` предназначен для соответствующих устройств и эмуляторов. Контент выбранного сервера скачивается приложением; отдельные игровые файлы вручную не нужны.
 
