@@ -607,6 +607,10 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     originalActions = ((IEnumerable)Get(originalActionBar!, "Children")!).Cast<object>().ToArray();
                     var server = Descendants(lobby).Single(c => Get(c, "Name")?.ToString() == "ServerName");
                     server.GetType().GetProperty("Text")!.SetValue(server, "Space Station 14 — mobile lobby");
+                    var song = Descendants(lobby).Single(c => Get(c, "Name")?.ToString() == "LobbySong");
+                    song.GetType().GetProperty("Text")!.SetValue(song, "Playing: Space Stac by Hayabusa");
+                    var art = Descendants(lobby).Single(c => Get(c, "Name")?.ToString() == "LobbyBackground");
+                    art.GetType().GetProperty("Text")!.SetValue(art, "Menu art: original station artwork");
                     return true;
                 });
                 await Task.Delay(900);
@@ -614,13 +618,29 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                 await OnMain(() =>
                 {
                     LayoutCheck(Descendants(FindLayout("MobileLobbyScroll")).Contains(left!) && Descendants(FindLayout("MobileLobbyServerScroll")).Contains(right!),
-                        "original lobby controls are retained in native scrolling panes");
+                        "original lobby controls are retained in bounded native panes");
                     Inside(FindLayout("MobileLobbyPanel"), "lobby");
                     LayoutCheck(!Descendants(overlay).Any(c => c.GetType().Name == "VirtualThumbstick" && Get(c, "VisibleInTree") is true),
                         "movement stick does not cover lobby controls");
                     Inside(FindLayout("MobileDisplayButton"), "UI settings action");
                     LayoutCheck(FindLayout("ObserveButton").GetType().Name == "UICommandButton", "observe retains the original permission-aware command button");
                     Inside(FindLayout("ReadyButton"), "ready action");
+                    var dock = Descendants(lobby!).Single(c => Get(c, "Name")?.ToString() == "MobileChatDock");
+                    LayoutCheck(Get(dock, "IsLobby") is true && !Descendants(dock).Any(c =>
+                        Get(c, "Name")?.ToString() is "MobileChatExpand" or "MobileChatToggle" && Get(c, "VisibleInTree") is true),
+                        "lobby chat is static and has no hide/resize actions");
+                    var rootSize = Vector(Get(Get(ui, "RootControl")!, "Size")!);
+                    var dockPosition = Vector(Get(dock, "GlobalPosition")!); var dockSize = Vector(Get(dock, "Size")!);
+                    LayoutCheck(dockPosition.X == 0 && Math.Abs(dockSize.X - rootSize.X) < 1 && Math.Abs(dockPosition.Y + dockSize.Y - rootSize.Y) < 1,
+                        "lobby chat fills the bottom edge independently of server navigation");
+                    Inside(FindLayout("MobileLobbyCredits"), "complete credits footer");
+                    foreach (var footerName in new[] { "LobbySong", "LobbyBackground" })
+                    {
+                        var label = FindLayout(footerName); var footer = FindLayout("MobileLobbyCredits");
+                        var p = Vector(Get(label, "GlobalPixelPosition")!); var extent = Vector(Get(label, "PixelSize")!);
+                        var bottom = Vector(Get(footer, "GlobalPixelPosition")!).Y + Vector(Get(footer, "PixelSize")!).Y;
+                        LayoutCheck(p.Y + extent.Y <= bottom + 1, "song and art attribution fit without a scrolling footer");
+                    }
                     return true;
                 });
                 await Capture("mobile-lobby-wide");
@@ -712,6 +732,89 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     return true;
                 });
                 await Capture("mobile-lobby-compact");
+                object? lateJoin = null, ticker = null, station = null;
+                await OnMain(() =>
+                {
+                    foreach (var action in originalActions!) Inside(action, "unscrolled lobby action");
+                    var manager = Resolve(shared.GetType("Robust.Shared.GameObjects.IEntitySystemManager", true)!);
+                    ticker = manager.GetType().GetMethod("GetEntitySystem", [typeof(Type)])!
+                        .Invoke(manager, [loaded.LoadedAssembly.GetType("Content.Client.GameTicking.ClientGameTicker", true)!])!;
+                    station = Activator.CreateInstance(shared.GetType("Robust.Shared.GameObjects.NetEntity", true)!, [771]);
+                    ((IDictionary)Get(ticker, "StationNames")!).Add(station!, "Mobile test station");
+                    var jobs = (IDictionary)Get(ticker, "JobsAvailable")!;
+                    var jobMap = (IDictionary)Activator.CreateInstance(jobs.GetType().GenericTypeArguments[1])!;
+                    var protoManagerType = shared.GetType("Robust.Shared.Prototypes.IPrototypeManager", true)!;
+                    var protoManager = Resolve(protoManagerType);
+                    var jobType = AppDomain.CurrentDomain.GetAssemblies().Single(a => a.GetName().Name == "Content.Shared")
+                        .GetType("Content.Shared.Roles.JobPrototype", true)!;
+                    var jobPrototypes = (IEnumerable)protoManagerType.GetMethods().Single(m => m.Name == "EnumeratePrototypes" && m.IsGenericMethodDefinition)
+                        .MakeGenericMethod(jobType).Invoke(protoManager, null)!;
+                    foreach (var job in jobPrototypes)
+                        jobMap.Add(Activator.CreateInstance(jobMap.GetType().GenericTypeArguments[0], [Get(job, "ID")!.ToString()!])!, (int?)2);
+                    jobs.Add(station!, jobMap);
+                    lateJoin = Activator.CreateInstance(loaded.LoadedAssembly.GetType("Content.Client.LateJoin.LateJoinGui", true)!)!;
+                    lateJoin.GetType().GetMethod("OpenCentered")!.Invoke(lateJoin, null);
+                    return true;
+                });
+                foreach (var scale in new[] { 0f, 3f })
+                {
+                    await OnMain(() => { SetScale(scale); return true; });
+                    await Task.Delay(700);
+                    await OnMain(() =>
+                    {
+                        Inside(lateJoin!, "bounded late join window");
+                        Inside(Descendants(lateJoin!).First(c => Get(c, "Name")?.ToString() == "CloseButton"), "late join close action");
+                        Inside(FindLayout("MobileLateJoinDepartments"), "native department selector");
+                        var jobs = Descendants(lateJoin!).Where(c => c.GetType().Name == "JobButton").ToArray();
+                        LayoutCheck(jobs.Length > 10 && jobs.All(c => Number(c, "MinHeight") >= 38),
+                            "late join retains original role buttons and touch targets");
+                        var selector = FindLayout("MobileLateJoinDepartments");
+                        return true;
+                    });
+                    await Capture(scale == 0 ? "mobile-latejoin-all-wide" : "mobile-latejoin-all-compact");
+                    await OnMain(() => { LayoutTap(FindLayout("MobileLateJoinDepartments")); return true; });
+                    await Task.Delay(300);
+                    await OnMain(() =>
+                    {
+                        var grid = FindLayout("MobileLateJoinJobs");
+                        var category = ((IEnumerable)Get(grid, "Children")!).Cast<object>().First();
+                        var title = Descendants(category).First(c => c.GetType().Name == "Label");
+                        var item = Descendants(Get(ui, "RootControl")!).First(c => c.GetType().Name == "Button" &&
+                            Get(c, "Text")?.ToString() == Get(title, "Text")?.ToString() && Get(c, "VisibleInTree") is true);
+                        LayoutTap(item);
+                        return true;
+                    });
+                    await Task.Delay(300);
+                    await OnMain(() =>
+                    {
+                        var grid = FindLayout("MobileLateJoinJobs");
+                        LayoutCheck(((IEnumerable)Get(grid, "Children")!).Cast<object>().Count(c => Get(c, "Visible") is true) == 1,
+                            "native department choice filters the original categories");
+                        LayoutCheck(Number(FindLayout("MobileLateJoinDepartments"), "SelectedId") == 1, "department selector displays its selected category");
+                        var role = Descendants(grid).First(c => c.GetType().Name == "JobButton");
+                        role.GetType().GetMethod("RefreshLabel")!.Invoke(role, [(int?)11]);
+                        LayoutCheck(Number(role, "Amount") == 11, "original availability updates still reach adapted roles");
+                        return true;
+                    });
+                    await Capture(scale == 0 ? "mobile-latejoin-wide" : "mobile-latejoin-compact");
+                }
+                await OnMain(() =>
+                {
+                    lateJoin!.GetType().GetMethod("RebuildUI", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(lateJoin, null);
+                    return true;
+                });
+                await Task.Delay(600);
+                await OnMain(() =>
+                {
+                    LayoutCheck(Descendants(lateJoin!).Count(c => Get(c, "Name")?.ToString() == "MobileLateJoinDepartments") == 1,
+                        "server role rebuild creates one fresh department selector");
+                    LayoutTap(Descendants(lateJoin!).First(c => Get(c, "Name")?.ToString() == "CloseButton"));
+                    ((IDictionary)Get(ticker!, "StationNames")!).Remove(station!);
+                    ((IDictionary)Get(ticker!, "JobsAvailable")!).Remove(station!);
+                    return true;
+                });
+                await Task.Delay(400);
+                await OnMain(() => { LayoutCheck(Get(lateJoin!, "IsOpen") is false, "native late join close callback remains active"); return true; });
                 object? characterGui = null, characterEditor = null, characterBody = null;
                 object? profileEditor = null, originalProfileTabs = null, originalProfileTabsParent = null;
                 await OnMain(() =>
@@ -732,9 +835,9 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                     characterBody = Get(characterEditor, "Parent");
                     var state = Descendants(lobby!).Single(c => Get(c, "Name")?.ToString() == "CharacterSetupState");
                     if (Get(characterGui, "Parent") == null) state.GetType().GetMethod("AddChild")!.Invoke(state, [characterGui]);
-                    state.GetType().GetProperty("Visible")!.SetValue(state, true);
-                    var normal = Descendants(lobby!).Single(c => Get(c, "Name")?.ToString() == "DefaultState");
-                    normal.GetType().GetProperty("Visible")!.SetValue(normal, false);
+                    var switchState = lobby!.GetType().GetMethod("SwitchState")!;
+                    switchState.Invoke(lobby, [Enum.Parse(switchState.GetParameters()[0].ParameterType, "CharacterSetup")]);
+                    profileEditor.GetType().GetMethod("SetProfile")!.Invoke(profileEditor, [fixtureProfile, (int?)0]);
                     return true;
                 });
                 await Task.Delay(800);
@@ -776,6 +879,10 @@ AppDomain.CurrentDomain.AssemblyLoad += (_, loaded) =>
                         LayoutCheck(Number(FindLayout("MobileCharacterPanel"), "Width") >= lobbySize.X - 32,
                             $"character workspace uses the full screen instead of a lobby column: width={Number(FindLayout("MobileCharacterPanel"), "Width")}, root={lobbySize.X}");
                         Inside(profilePanel, "bounded profile form");
+                        var workspace = FindLayout("MobileCharacterPanel");
+                        var workspacePosition = Vector(Get(workspace, "GlobalPosition")!); var workspaceExtent = Vector(Get(workspace, "Size")!);
+                        LayoutCheck(workspacePosition.X <= 1 && Math.Abs(workspacePosition.X + workspaceExtent.X - lobbySize.X) <= 1,
+                            "character setup covers both edges after the original SwitchState callback");
                         Inside(FindLayout("MobileProfilePreview"), "persistent character preview");
                         Inside(FindLayout("MobileProfileFooter"), "persistent save/reset actions");
                         var preview = FindLayout("MobileProfilePreview");

@@ -27,7 +27,7 @@ index a788ade..c469bef 100644
      <PackageVersion Include="Dapper" Version="2.0.123"/>
      <PackageVersion Include="DynamicData" Version="8.4.1"/>
 diff --git a/SS14.Launcher/App.xaml.cs b/SS14.Launcher/App.xaml.cs
-index 214def3..4a1bdae 100644
+index 214def3..fc89e60 100644
 --- a/SS14.Launcher/App.xaml.cs
 +++ b/SS14.Launcher/App.xaml.cs
 @@ -5,6 +5,7 @@ using System.Threading.Tasks;
@@ -78,7 +78,7 @@ index 214def3..4a1bdae 100644
  
          if (ConfigConstants.IsAuthOverride)
          {
-@@ -160,7 +171,25 @@ public class App : Application
+@@ -160,7 +171,24 @@ public class App : Application
              viewModel.StartAuthOverrideCountdown();
          }
  
@@ -89,12 +89,11 @@ index 214def3..4a1bdae 100644
 +            window.MinHeight = 0;
 +            window.Width = double.NaN;
 +            window.Height = double.NaN;
-+            var root = new Grid();
-+            LauncherMobile.Root = root;
-+            root.Children.Add(new LauncherFitViewport(new Avalonia.Size(480, 240))
++            var root = new LauncherSafeAreaRoot(new LauncherFitViewport(new Avalonia.Size(480, 240))
 +            {
 +                Child = window, ClipToBounds = true
 +            });
++            LauncherMobile.Root = root;
 +            if (ApplicationLifetime is ISingleViewApplicationLifetime single)
 +                single.MainView = root;
 +        }
@@ -316,6 +315,45 @@ index 025ea50..951c6e3 100644
          string appDataDir;
  
          if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+diff --git a/SS14.Launcher/LauncherSafeAreaRoot.cs b/SS14.Launcher/LauncherSafeAreaRoot.cs
+new file mode 100644
+index 0000000..17db9d4
+--- /dev/null
++++ b/SS14.Launcher/LauncherSafeAreaRoot.cs
+@@ -0,0 +1,33 @@
++using Avalonia;
++using Avalonia.Controls;
++using Avalonia.Controls.Platform;
++
++namespace SS14.Launcher;
++
++// Avalonia reports Android system bars and cutouts in logical pixels.
++public sealed class LauncherSafeAreaRoot : Grid
++{
++    private IInsetsManager? _insets;
++    private readonly Control _viewport;
++    public LauncherSafeAreaRoot(Control viewport) { _viewport = viewport; Children.Add(viewport); }
++
++    public void ApplySafeArea(Thickness padding) => _viewport.Margin = padding;
++    private void SafeAreaChanged(object? sender, SafeAreaChangedArgs e) => ApplySafeArea(e.SafeAreaPadding);
++
++    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
++    {
++        base.OnAttachedToVisualTree(e);
++        TopLevel.SetAutoSafeAreaPadding(this, false);
++        _insets = TopLevel.GetTopLevel(this)?.InsetsManager;
++        if (_insets == null) return;
++        _insets.SafeAreaChanged += SafeAreaChanged;
++        ApplySafeArea(_insets.SafeAreaPadding);
++    }
++
++    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
++    {
++        if (_insets != null) _insets.SafeAreaChanged -= SafeAreaChanged;
++        _insets = null;
++        base.OnDetachedFromVisualTree(e);
++    }
++}
 diff --git a/SS14.Launcher/Models/Connector.cs b/SS14.Launcher/Models/Connector.cs
 index 94960ca..960a01f 100644
 --- a/SS14.Launcher/Models/Connector.cs
@@ -1041,6 +1079,19 @@ index 485a865..d6840dd 100644
      <Setter Property="FontFamily" Value="/Assets/Fonts/noto_sans/*.ttf#Noto Sans" />
    </Style>
  
+diff --git a/SS14.Launcher/Theme/ThemeDropDown.xaml b/SS14.Launcher/Theme/ThemeDropDown.xaml
+index 1156c1f..90b4560 100644
+--- a/SS14.Launcher/Theme/ThemeDropDown.xaml
++++ b/SS14.Launcher/Theme/ThemeDropDown.xaml
+@@ -12,7 +12,7 @@
+ 
+           <Panel Margin="14 0">
+             <Grid Margin="0, 2" ColumnDefinitions="*,Auto">
+-              <ContentPresenter Content="{TemplateBinding HeaderContent}"
++              <ContentPresenter VerticalAlignment="Center" Content="{TemplateBinding HeaderContent}"
+                                 ContentTemplate="{TemplateBinding HeaderContentTemplate}" />
+               <Path Grid.Column="1" Fill="{DynamicResource ThemeForegroundBrush}"
+                     Width="8"
 diff --git a/SS14.Launcher/Theme/ThemeOverlayBox.xaml b/SS14.Launcher/Theme/ThemeOverlayBox.xaml
 index 60d10f9..e4d1557 100644
 --- a/SS14.Launcher/Theme/ThemeOverlayBox.xaml
@@ -1393,6 +1444,36 @@ index 5cf49e1..c17d6cd 100644
          Helpers.OpenUri(new Uri(ConfigConstants.DownloadUrl));
      }
  
+diff --git a/SS14.Launcher/Views/AccountDropDown.xaml b/SS14.Launcher/Views/AccountDropDown.xaml
+index f3666c9..a8a00e5 100644
+--- a/SS14.Launcher/Views/AccountDropDown.xaml
++++ b/SS14.Launcher/Views/AccountDropDown.xaml
+@@ -12,7 +12,7 @@
+     <vm:AccountDropDownViewModel />
+   </Design.DataContext>
+ 
+-  <v:DropDown HeaderContent="{Binding LoginText}" IsDropDownOpen="{Binding IsDropDownOpen, Mode=TwoWay}" Classes="OpenRight">
++  <v:DropDown Name="AccountMenu" HeaderContent="{Binding LoginText}" IsDropDownOpen="{Binding IsDropDownOpen, Mode=TwoWay}" Classes="OpenRight">
+     <Panel>
+       <v:AngleBox Fill="{DynamicResource ThemePopupBackgroundBrush}" SideStyle="OpenRight" />
+       <StackPanel Orientation="Vertical">
+diff --git a/SS14.Launcher/Views/AccountDropDown.xaml.cs b/SS14.Launcher/Views/AccountDropDown.xaml.cs
+index efcc289..f64cee1 100644
+--- a/SS14.Launcher/Views/AccountDropDown.xaml.cs
++++ b/SS14.Launcher/Views/AccountDropDown.xaml.cs
+@@ -18,5 +18,12 @@ public partial class AccountDropDown : UserControl
+     public AccountDropDown()
+     {
+         InitializeComponent();
++        if (LauncherMobile.DataRoot == null) return;
++        AccountMenu.MinHeight = 36;
++        AccountMenu.HeaderContentTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((value, _) => new TextBlock
++        {
++            Text = value?.ToString(), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
++            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
++        });
+     }
+ }
 diff --git a/SS14.Launcher/Views/AddFavoriteDialog.xaml b/SS14.Launcher/Views/AddFavoriteDialog.xaml
 index a9d812b..1c43a06 100644
 --- a/SS14.Launcher/Views/AddFavoriteDialog.xaml
@@ -1533,7 +1614,7 @@ index 93a3738..c65b805 100644
      private MainWindowViewModel? _viewModel;
  
 diff --git a/SS14.Launcher/Views/MainWindowContent.xaml b/SS14.Launcher/Views/MainWindowContent.xaml
-index fe18b40..0dc9d0d 100644
+index fe18b40..a85e4c0 100644
 --- a/SS14.Launcher/Views/MainWindowContent.xaml
 +++ b/SS14.Launcher/Views/MainWindowContent.xaml
 @@ -1,4 +1,4 @@
@@ -1548,17 +1629,17 @@ index fe18b40..0dc9d0d 100644
  
 +  <UserControl.Styles>
 +    <Style Selector="v|MainWindowContent.mobile Button">
-+      <Setter Property="MinHeight" Value="44" />
++      <Setter Property="MinHeight" Value="36" />
 +    </Style>
 +    <Style Selector="v|MainWindowContent.mobile TextBox">
-+      <Setter Property="MinHeight" Value="44" />
++      <Setter Property="MinHeight" Value="36" />
 +    </Style>
 +    <Style Selector="v|MainWindowContent.mobile TabItem">
-+      <Setter Property="MinHeight" Value="44" />
-+      <Setter Property="Padding" Value="10,6" />
++      <Setter Property="MinHeight" Value="36" />
++      <Setter Property="Padding" Value="10,4" />
 +    </Style>
 +    <Style Selector="v|MainWindowContent.mobile CheckBox">
-+      <Setter Property="MinHeight" Value="40" />
++      <Setter Property="MinHeight" Value="32" />
 +    </Style>
 +  </UserControl.Styles>
 +
@@ -1600,7 +1681,7 @@ index fe18b40..0dc9d0d 100644
                                 DataContext="{Binding AccountDropDown}" />
            </Grid>
 diff --git a/SS14.Launcher/Views/MainWindowContent.xaml.cs b/SS14.Launcher/Views/MainWindowContent.xaml.cs
-index bafb5b6..ad1d0c0 100644
+index bafb5b6..17dd0a6 100644
 --- a/SS14.Launcher/Views/MainWindowContent.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowContent.xaml.cs
 @@ -1,4 +1,5 @@
@@ -1610,15 +1691,15 @@ index bafb5b6..ad1d0c0 100644
  
  namespace SS14.Launcher.Views;
  
-@@ -7,5 +8,30 @@ public sealed partial class MainWindowContent : UserControl
+@@ -7,5 +8,31 @@ public sealed partial class MainWindowContent : UserControl
      public MainWindowContent()
      {
          InitializeComponent();
 +        if (LauncherMobile.DataRoot == null) return;
 +        Classes.Add("mobile");
-+        FontSize = 16;
++        FontSize = 14;
 +        HeaderPanel.Margin = new Thickness(6, 0);
-+        HeaderLogo.Height = 42;
++        HeaderLogo.Height = 36;
 +        HeaderLogo.MaxWidth = 190;
 +        HeaderLogo.Margin = new Thickness(0, 3, 8, 3);
 +        HeaderTools.RowDefinitions = new RowDefinitions("Auto");
@@ -1626,7 +1707,7 @@ index bafb5b6..ad1d0c0 100644
 +        HeaderTools.MaxWidth = 280;
 +        foreach (var link in new[] { DiscordLink, WebsiteLink })
 +        {
-+            link.MinWidth = 44;
++            link.MinWidth = 36;
 +            link.Margin = new Thickness(1, 2);
 +            if (link.Content is IconLabel icon)
 +            {
@@ -1637,7 +1718,8 @@ index bafb5b6..ad1d0c0 100644
 +        Grid.SetRow(HeaderAccount, 0);
 +        Grid.SetColumn(HeaderAccount, 2);
 +        Grid.SetColumnSpan(HeaderAccount, 1);
-+        HeaderAccount.MinWidth = 140;
++        HeaderAccount.MinWidth = 120;
++        HeaderAccount.MinHeight = 36;
 +        HeaderAccount.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
      }
  }
@@ -1791,10 +1873,19 @@ index 6a51143..75d9beb 100644
      }
  }
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
-index 47e6715..58ddaee 100644
+index 47e6715..69bac78 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml
-@@ -23,9 +23,11 @@
+@@ -20,12 +20,20 @@
+     <Style Selector="Button.FavoriteButton.IsFavorite > views|IconLabel">
+       <Setter Property="Icon" Value="{DynamicResource 'ButtonIcon-star'}" />
+     </Style>
++    <Style Selector="Button.FavoriteButton.mobile > views|IconLabel /template/ Image#Icon">
++      <Setter Property="Width" Value="20" />
++      <Setter Property="Height" Value="20" />
++      <Setter Property="Stretch" Value="Uniform" />
++      <Setter Property="Margin" Value="0" />
++    </Style>
    </UserControl.Styles>
  
    <Panel>
@@ -1807,7 +1898,7 @@ index 47e6715..58ddaee 100644
            <Grid.ColumnDefinitions>
              <ColumnDefinition Width="*" /> <!-- Server Name -->
              <ColumnDefinition Width="100" /> <!-- Round Time -->
-@@ -33,18 +35,18 @@
+@@ -33,18 +41,18 @@
              <ColumnDefinition Width="112" /> <!-- Connect -->
            </Grid.ColumnDefinitions>
  
@@ -1829,7 +1920,7 @@ index 47e6715..58ddaee 100644
              <Panel>
                <controls:TimerTextCell Value="{Binding RoundStartTime}"
                  IsVisible="{Binding RoundStatusString,Converter={x:Static StringConverters.IsNullOrEmpty}}" />
-@@ -55,11 +57,11 @@
+@@ -55,11 +63,11 @@
              </Panel>
            </Border>
  
@@ -1844,10 +1935,10 @@ index 47e6715..58ddaee 100644
                Content="{loc:Loc server-entry-connect}"
                Command="{Binding ConnectCommand}" />
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-index 554bf08..c190911 100644
+index 554bf08..6d5016e 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerEntryView.xaml.cs
-@@ -14,6 +14,45 @@ public partial class ServerEntryView : UserControl
+@@ -14,6 +14,51 @@ public partial class ServerEntryView : UserControl
      {
          InitializeComponent();
  
@@ -1856,9 +1947,9 @@ index 554bf08..c190911 100644
 +            // Reflow the original cells and commands; retain the same ViewModel.
 +            EntryHeader.RowDefinitions = new RowDefinitions("Auto,Auto");
 +            CardBackground.IsVisible = true;
-+            Expando.Margin = new Thickness(7, 5);
-+            EntryHeader.ColumnDefinitions = new ColumnDefinitions("*,48,Auto,112");
-+            EntryHeader.MinHeight = 76;
++            Expando.Margin = new Thickness(5, 2);
++            EntryHeader.ColumnDefinitions = new ColumnDefinitions("*,36,Auto,100");
++            EntryHeader.MinHeight = 54;
 +            Grid.SetColumnSpan(ServerNameCell, 3);
 +            Grid.SetRow(ServerStatusCell, 1);
 +            Grid.SetColumn(ServerStatusCell, 0);
@@ -1875,16 +1966,22 @@ index 554bf08..c190911 100644
 +            }
 +            if (ServerNameCell.Child is TextBlock name)
 +            {
-+                name.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
-+                name.MaxLines = 2;
++                name.TextWrapping = Avalonia.Media.TextWrapping.NoWrap;
++                name.MaxLines = 1;
 +                name.FontWeight = Avalonia.Media.FontWeight.SemiBold;
 +            }
-+            if (ConnectCell.Child is Button connect) connect.MinHeight = 48;
++            if (ConnectCell.Child is Button connect) connect.MinHeight = 36;
 +            // The original favorite command is reachable without expanding a row.
 +            (FavoriteButton.Parent as Panel)?.Children.Remove(FavoriteButton);
 +            FavoriteButtonIconLabel.Content = null;
-+            FavoriteButton.MinWidth = FavoriteButton.MinHeight = 40;
-+            FavoriteButton.Padding = new Thickness(8);
++            FavoriteButton.Classes.Add("mobile");
++            FavoriteButtonIconLabel.Bind(IconLabel.IconProperty, new Avalonia.Data.Binding("IsFavorite")
++            {
++                Converter = new Avalonia.Data.Converters.FuncValueConverter<bool, Avalonia.Media.IImage>(favorite =>
++                    (Avalonia.Media.IImage)Application.Current!.Resources[favorite ? "ButtonIcon-star" : "ButtonIcon-star-outline"]!)
++            });
++            FavoriteButton.MinWidth = FavoriteButton.MinHeight = 32;
++            FavoriteButton.Padding = new Thickness(5);
 +            Grid.SetRow(FavoriteButton, 1);
 +            Grid.SetColumn(FavoriteButton, 1);
 +            EntryHeader.Children.Add(FavoriteButton);
@@ -1940,7 +2037,7 @@ index c3ef318..6e38b19 100644
                BoxShadow="0 -2 4 Black">
          <Panel Background="{DynamicResource ThemeBackgroundBrush}">
 diff --git a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
-index 2768089..075f275 100644
+index 2768089..ef18d64 100644
 --- a/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
 +++ b/SS14.Launcher/Views/MainWindowTabs/ServerListTabView.xaml.cs
 @@ -1,5 +1,4 @@
@@ -1955,7 +2052,7 @@ index 2768089..075f275 100644
          InitializeComponent();
 +        if (LauncherMobile.DataRoot == null) return;
 +        DockPanel.SetDock(SearchToolbar, Dock.Top);
-+        SearchToolbar.Height = 48;
++        SearchToolbar.Height = 36;
 +        ServerRows.ShowHeader = false;
 +        ServerPanels.RowDefinitions = new RowDefinitions("*");
 +        Grid.SetRow(ServerRows, 0);

@@ -2887,10 +2887,10 @@ index 0000000..413d99a
 +}
 diff --git a/Resources/Locale/en-US/mobile-ui.ftl b/Resources/Locale/en-US/mobile-ui.ftl
 new file mode 100644
-index 0000000..08e8e08
+index 0000000..84920eb
 --- /dev/null
 +++ b/Resources/Locale/en-US/mobile-ui.ftl
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,19 @@
 +mobile-chat-title = Chat
 +mobile-chat-toggle = Show / hide chat
 +mobile-chat-expand = Expand / compact chat
@@ -2906,12 +2906,16 @@ index 0000000..08e8e08
 +mobile-profile-randomizer = Randomize
 +mobile-profile-files = Import / export
 +mobile-profile-colors = Colors
++mobile-lobby-actions = Actions
++mobile-lobby-info = Info
++mobile-lobby-character = Character
++mobile-latejoin-all = All departments
 diff --git a/Resources/Locale/ru-RU/mobile-ui.ftl b/Resources/Locale/ru-RU/mobile-ui.ftl
 new file mode 100644
-index 0000000..200c193
+index 0000000..ab2d8ff
 --- /dev/null
 +++ b/Resources/Locale/ru-RU/mobile-ui.ftl
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,19 @@
 +mobile-chat-title = Чат
 +mobile-chat-toggle = Показать / скрыть чат
 +mobile-chat-expand = Развернуть / уменьшить чат
@@ -2927,12 +2931,16 @@ index 0000000..200c193
 +mobile-profile-randomizer = Рандомизация
 +mobile-profile-files = Импорт / экспорт
 +mobile-profile-colors = Цвета
++mobile-lobby-actions = Действия
++mobile-lobby-info = Информация
++mobile-lobby-character = Персонаж
++mobile-latejoin-all = Все отделы
 diff --git a/Robust.Client/UserInterface/Mobile/MobileChatDock.cs b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
 new file mode 100644
-index 0000000..d233cce
+index 0000000..3329bbd
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileChatDock.cs
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,105 @@
 +using System;
 +using System.Numerics;
 +using Robust.Client.Graphics;
@@ -2960,9 +2968,11 @@ index 0000000..d233cce
 +    public bool Expanded => Mode == MobileChatMode.Full;
 +    public bool Collapsed => Mode == MobileChatMode.Hidden;
 +
-+    public MobileChatDock(Control content, LineEdit input)
++    public bool IsLobby { get; }
++
++    public MobileChatDock(Control content, LineEdit input, bool lobby = false)
 +    {
-+        Name = "MobileChatDock";
++        Name = "MobileChatDock"; IsLobby = lobby;
 +        _content = content;
 +        _input = input;
 +        MouseFilter = MouseFilterMode.Stop;
@@ -2975,6 +2985,7 @@ index 0000000..d233cce
 +        var header = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Horizontal,
 +            SeparationOverride = 2 };
 +        _column.AddChild(header);
++        header.Visible = !lobby;
 +        _hide = new MobileHudIconButton(MobileHudIconButton.Symbol.Chat, "MobileChatToggle",
 +            Loc.GetString("mobile-chat-toggle"));
 +        _hide.OnPressed += _ => SetCollapsed(!Collapsed);
@@ -3000,7 +3011,7 @@ index 0000000..d233cce
 +    public void SetMode(MobileChatMode mode)
 +    {
 +        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
-+        if (Mode == mode) return;
++        if (IsLobby || Mode == mode) return;
 +        if (mode == MobileChatMode.Hidden) _input.ReleaseKeyboardFocus();
 +        else _lastVisibleMode = mode;
 +        Mode = mode;
@@ -3028,6 +3039,7 @@ index 0000000..d233cce
 +
 +    public Vector2 DockSize(Vector2 available, float maxWidth = float.PositiveInfinity)
 +    {
++        if (IsLobby) return new Vector2(MathF.Min(available.X, maxWidth), MathF.Min(available.Y, Math.Clamp(available.Y * 0.27f, 100, 200)));
 +        if (Collapsed) return new Vector2(40);
 +        var width = MathF.Min(available.X, Math.Clamp(available.X * (Expanded ? 0.56f : 0.36f), 300, Expanded ? 680 : 460));
 +        var height = Expanded ? Math.Clamp(available.Y * 0.62f, 170, 430) : 172;
@@ -3157,10 +3169,10 @@ index 0000000..d95f951
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
 new file mode 100644
-index 0000000..f546082
+index 0000000..3721b25
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileServerUiAdapter.cs
-@@ -0,0 +1,458 @@
+@@ -0,0 +1,473 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Linq;
@@ -3244,11 +3256,13 @@ index 0000000..f546082
 +            {
 +                // Never adapt our own presentation containers recursively.
 +                if (source.GetType().Assembly == typeof(Control).Assembly) continue;
-+                if ((TypeIs(source, "LobbyGui") || TypeIs(source, "GuidebookWindow") || TypeIs(source, "CharacterSetupGui") || TypeIs(source, "HumanoidProfileEditor")) && !_screens.Any(s => s.Source == source))
++                if ((TypeIs(source, "LobbyGui") || TypeIs(source, "GuidebookWindow") || TypeIs(source, "CharacterSetupGui") || TypeIs(source, "HumanoidProfileEditor") || TypeIs(source, "LateJoinGui")) && !_screens.Any(s => s.Source == source))
 +                {
 +                    var split = Tree(source).OfType<SplitContainer>().FirstOrDefault();
 +                    if (TypeIs(source, "LobbyGui") && split?.First?.Name == "LeftSide" && split.Second?.Name == "RightSide")
 +                        _screens.Add(new MobileLobbyBinding(source, split));
++                    else if (source is BaseWindow lateJoin && TypeIs(source, "LateJoinGui"))
++                        _screens.Add(new MobileLateJoinBinding(lateJoin));
 +                    else if (source is BaseWindow window && TypeIs(source, "GuidebookWindow") && split?.First?.Name == "TreeBox" && split.Second != null)
 +                        _screens.Add(new MobileGuidebookBinding(window, split));
 +                    else if (TypeIs(source, "HumanoidProfileEditor") && MobileProfileBinding.TryCreate(source) is { } profile)
@@ -3270,7 +3284,8 @@ index 0000000..f546082
 +        foreach (var chat in _chats)
 +        {
 +            chat.Source.Visible = !chat.Dock.Collapsed;
-+            chat.Dock.Visible = AncestorsVisible(chat.OriginalParent);
++            chat.Dock.Visible = chat.Lobby == null ? AncestorsVisible(chat.OriginalParent) :
++                chat.Lobby.VisibleInTree && !Tree(chat.Lobby).Any(c => c.Name == "CharacterSetupState" && c.Visible);
 +        }
 +        foreach (var menu in _menus) menu.Enforce();
 +        foreach (var screen in _screens)
@@ -3384,6 +3399,15 @@ index 0000000..f546082
 +        var top = 0f;
 +        foreach (var chat in _chats)
 +        {
++            if (chat.Dock.IsLobby)
++            {
++                var lobbySize = chat.Dock.DockSize(finalSize);
++                var bottom = new Vector2(0, MathF.Max(0, finalSize.Y - lobbySize.Y)) - (chat.Dock.Parent?.GlobalPosition ?? Vector2.Zero);
++                LayoutContainer.SetMarginLeft(chat.Dock, bottom.X); LayoutContainer.SetMarginTop(chat.Dock, bottom.Y);
++                LayoutContainer.SetMarginRight(chat.Dock, bottom.X + lobbySize.X); LayoutContainer.SetMarginBottom(chat.Dock, bottom.Y + lobbySize.Y);
++                chat.Dock.Measure(lobbySize); chat.Dock.Arrange(UIBox2.FromDimensions(bottom, lobbySize));
++                continue;
++            }
 +            var desired = chat.Dock.DockSize(finalSize);
 +            var left = 12f;
 +            var right = finalSize.X;
@@ -3429,6 +3453,7 @@ index 0000000..f546082
 +        public readonly MobileChatDock Dock;
 +        public readonly OutputPanel Output;
 +        public readonly Control OriginalParent;
++        public readonly Control? Lobby;
 +        private readonly UIScreen? _screen;
 +        private readonly int _index;
 +        private readonly bool _visible;
@@ -3457,7 +3482,9 @@ index 0000000..f546082
 +                typeof(UIScreen).GetMethod(nameof(UIScreen.RemoveWidget))!.MakeGenericMethod(source.GetType()).Invoke(_screen, null);
 +            source.Parent?.RemoveChild(source);
 +            source.MinSize = Vector2.Zero; source.SetSize = new Vector2(float.NaN); source.MaxSize = new Vector2(float.PositiveInfinity);
-+            Dock = new MobileChatDock(source, input);
++            for (var ancestor = OriginalParent; ancestor != null; ancestor = ancestor.Parent)
++                if (TypeIs(ancestor, "LobbyGui")) { Lobby = ancestor; break; }
++            Dock = new MobileChatDock(source, input, Lobby != null);
 +            var parentControl = (Control?) _screen ?? OriginalParent;
 +            parentControl.AddChild(Dock);
 +            LayoutContainer.SetAnchorPreset(Dock, LayoutContainer.LayoutPreset.TopLeft);
@@ -3621,10 +3648,10 @@ index 0000000..f546082
 +}
 diff --git a/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs b/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs
 new file mode 100644
-index 0000000..9a12c94
+index 0000000..61c88ca
 --- /dev/null
 +++ b/Robust.Client/UserInterface/Mobile/MobileScreenLayouts.cs
-@@ -0,0 +1,497 @@
+@@ -0,0 +1,557 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Linq;
@@ -3810,63 +3837,51 @@ index 0000000..9a12c94
 +{
 +    public Control Source { get; }
 +    private readonly MobileWidgetSlot _splitSlot, _leftSlot, _rightSlot;
++    private readonly MobileWidgetSlot? _characterSlot;
 +    private readonly MobileLobbyPanel _panel;
 +    private readonly MobileLobbyHomeBinding? _home;
-+    private readonly List<(Label Label, bool Clipped, Control.HAlignment Alignment)> _labels = new();
-+    private readonly List<MobileWidgetSlot> _actionSlots = new();
-+    private MobileWidgetSlot? _actionBarSlot;
-+    private GridContainer? _actions;
++    private readonly MobileLobbyServerBinding? _server;
++    private readonly Control? _main, _expand;
++    private readonly Thickness _margin;
++    private readonly bool _expandVisible;
++    private bool? _editing;
 +
 +    public MobileLobbyBinding(Control source, SplitContainer split)
 +    {
 +        Source = source;
++        var all = MobileServerUiAdapter.Tree(source).ToArray();
++        _main = all.FirstOrDefault(c => c.Name == "MainContainer");
++        _expand = all.FirstOrDefault(c => c.Name == "ExpandPanel");
++        _margin = _main?.Margin ?? new Thickness(0); _expandVisible = _expand?.Visible ?? false;
 +        _home = MobileLobbyHomeBinding.TryCreate(source);
++        _server = MobileLobbyServerBinding.TryCreate(split.Second!);
 +        _splitSlot = new MobileWidgetSlot(split);
 +        _leftSlot = new MobileWidgetSlot(split.First!);
 +        _rightSlot = new MobileWidgetSlot(split.Second!);
 +        _panel = new MobileLobbyPanel();
++        var state = all.FirstOrDefault(c => c.Name == "CharacterSetupState");
++        if (state != null) { _characterSlot = new MobileWidgetSlot(state); _characterSlot.MoveTo(_panel.Editor); }
 +        _leftSlot.MoveTo(_panel.LobbyScroll);
 +        _rightSlot.MoveTo(_panel.ServerScroll);
-+        _panel.Lobby = _leftSlot.Source;
 +        _panel.Server = _rightSlot.Source;
-+        _panel.CharacterState = MobileServerUiAdapter.Tree(_leftSlot.Source).FirstOrDefault(c => c.Name == "CharacterSetupState");
-+        foreach (var label in MobileServerUiAdapter.Tree(_panel.Server).OfType<Label>().Where(l => l.Name is "ServerName" or "Summary" or "Unloaded"))
-+        {
-+            _labels.Add((label, label.ClipText, label.HorizontalAlignment));
-+            label.ClipText = true;
-+            label.HorizontalAlignment = Control.HAlignment.Stretch;
-+        }
-+        var button = MobileServerUiAdapter.Tree(_panel.Server).FirstOrDefault(c => c.Name == "AHelpButton");
-+        if (button?.Parent is BoxContainer bar && bar.Children.All(c => c is BaseButton))
-+        {
-+            _actionBarSlot = new MobileWidgetSlot(bar);
-+            _actions = new GridContainer { Name = "MobileLobbyActions", Columns = 2,
-+                HSeparationOverride = 4, VSeparationOverride = 4, HorizontalExpand = true };
-+            var actionParent = bar.Parent!;
-+            var actionIndex = bar.GetPositionInParent();
-+            _actionSlots.AddRange(bar.Children.Select(action => new MobileWidgetSlot(action)).ToArray());
-+            foreach (var slot in _actionSlots)
-+            {
-+                slot.MoveTo(_actions);
-+                slot.Source.MinHeight = MathF.Max(44, slot.Source.MinHeight);
-+            }
-+            actionParent.RemoveChild(bar);
-+            actionParent.AddChild(_actions);
-+            _actions.SetPositionInParent(actionIndex);
-+            _panel.Actions = _actions;
-+        }
++        _panel.CharacterState = state;
 +        var parent = split.Parent!;
 +        var index = split.GetPositionInParent();
-+        parent.RemoveChild(split);
-+        parent.AddChild(_panel);
-+        _panel.SetPositionInParent(index);
++        parent.RemoveChild(split); parent.AddChild(_panel); _panel.SetPositionInParent(index);
 +    }
 +
 +    public void Update(Vector2 viewport, float chatHeight)
 +    {
-+        if (_panel.ChatHeight == chatHeight) return;
-+        _panel.ChatHeight = chatHeight;
-+        _panel.InvalidateMeasure();
++        _server?.RefreshPreview();
++        var editing = _panel.CharacterState?.Visible == true;
++        if (_expand != null) _expand.Visible = false;
++        if (_main != null)
++        {
++            var margin = editing ? new Thickness(0) : _margin;
++            if (!_main.Margin.Equals(margin)) _main.Margin = margin;
++        }
++        if (_panel.ChatHeight == chatHeight && _editing == editing) return;
++        _editing = editing; _panel.ChatHeight = chatHeight; _panel.InvalidateMeasure();
 +    }
 +
 +    public bool OwnsScroll(ScrollContainer scroll)
@@ -3878,44 +3893,36 @@ index 0000000..9a12c94
 +
 +    public void Restore()
 +    {
-+        _home?.Restore();
-+        foreach (var (label, clipped, alignment) in _labels)
-+            if (!label.Disposed) { label.ClipText = clipped; label.HorizontalAlignment = alignment; }
-+        foreach (var slot in _actionSlots) slot.Restore();
-+        _actionBarSlot?.Restore();
-+        _actions?.Parent?.RemoveChild(_actions);
-+        _actions?.Dispose();
-+        _leftSlot.Restore(); _rightSlot.Restore(); _splitSlot.Restore();
-+        _panel.Parent?.RemoveChild(_panel);
-+        _panel.Dispose();
++        _home?.Restore(); _server?.Restore();
++        _characterSlot?.Restore(); _leftSlot.Restore(); _rightSlot.Restore(); _splitSlot.Restore();
++        if (_main is { Disposed: false }) _main.Margin = _margin;
++        if (_expand is { Disposed: false }) _expand.Visible = _expandVisible;
++        _panel.Parent?.RemoveChild(_panel); _panel.Dispose();
++        _server?.RefreshPreview(force: true);
 +    }
 +}
 +
 +internal sealed class MobileLobbyPanel : Container
 +{
-+    public readonly ScrollContainer LobbyScroll = new() { Name = "MobileLobbyScroll", HScrollEnabled = true };
-+    public readonly ScrollContainer ServerScroll = new() { Name = "MobileLobbyServerScroll", HScrollEnabled = false };
-+    public Control Lobby = default!;
++    public readonly Control LobbyScroll = new() { Name = "MobileLobbyScroll" };
++    public readonly Control ServerScroll = new() { Name = "MobileLobbyServerScroll" };
++    public readonly Control Editor = new() { Name = "MobileLobbyEditor" };
 +    public Control Server = default!;
 +    public Control? CharacterState;
 +    public float ChatHeight;
-+    public GridContainer? Actions;
 +    private readonly BoxContainer _tabs;
 +    private readonly Button _lobbyTab, _serverTab;
 +    private bool _serverSelected;
 +
 +    public MobileLobbyPanel()
 +    {
-+        Name = "MobileLobbyPanel";
-+        HorizontalExpand = VerticalExpand = true;
-+        RectClipContent = true;
++        Name = "MobileLobbyPanel"; HorizontalExpand = VerticalExpand = true; RectClipContent = true;
 +        _tabs = new BoxContainer { SeparationOverride = 4 };
-+        _lobbyTab = new Button { Name = "MobileLobbyTab", Text = Loc.GetString("mobile-lobby-main"), MinHeight = 44, ToggleMode = true };
-+        _serverTab = new Button { Name = "MobileLobbyServerTab", Text = Loc.GetString("mobile-lobby-server"), MinHeight = 44, ToggleMode = true };
-+        _lobbyTab.OnPressed += _ => Select(false);
-+        _serverTab.OnPressed += _ => Select(true);
++        _lobbyTab = new Button { Name = "MobileLobbyTab", Text = Loc.GetString("mobile-lobby-main"), MinHeight = 36, ToggleMode = true };
++        _serverTab = new Button { Name = "MobileLobbyServerTab", Text = Loc.GetString("mobile-lobby-server"), MinHeight = 36, ToggleMode = true };
++        _lobbyTab.OnPressed += _ => Select(false); _serverTab.OnPressed += _ => Select(true);
 +        _tabs.AddChild(_lobbyTab); _tabs.AddChild(_serverTab);
-+        AddChild(_tabs); AddChild(LobbyScroll); AddChild(ServerScroll);
++        AddChild(_tabs); AddChild(LobbyScroll); AddChild(ServerScroll); AddChild(Editor);
 +    }
 +
 +    private void Select(bool server) { _serverSelected = server; InvalidateMeasure(); }
@@ -3923,38 +3930,118 @@ index 0000000..9a12c94
 +    protected override Vector2 MeasureOverride(Vector2 available)
 +    {
 +        var editing = CharacterState?.Visible == true;
-+        var wide = available.X >= 900 && !editing;
++        var wide = available.X >= 900;
 +        _tabs.Visible = !wide && !editing;
-+        if (LobbyScroll.HScrollEnabled == editing) LobbyScroll.HScrollEnabled = !editing;
-+        if (LobbyScroll.VScrollEnabled == editing) LobbyScroll.VScrollEnabled = !editing;
++        Editor.Visible = editing;
 +        _serverTab.Disabled = !Server.Visible;
-+        LobbyScroll.Visible = editing || wide || !_serverSelected || !Server.Visible;
++        LobbyScroll.Visible = !editing && (wide || !_serverSelected || !Server.Visible);
 +        ServerScroll.Visible = !editing && Server.Visible && (wide || _serverSelected);
 +        _lobbyTab.Pressed = LobbyScroll.Visible; _serverTab.Pressed = ServerScroll.Visible;
-+        _tabs.Measure(new Vector2(available.X, 44));
-+        var right = wide && ServerScroll.Visible ? Math.Clamp(available.X * 0.36f, 300, 460) : 0;
-+        var top = wide || CharacterState?.Visible == true ? 0 : 48;
-+        var columns = (wide ? right : available.X) >= 420 ? 2 : 1;
-+        if (Actions != null && Actions.Columns != columns) Actions.Columns = columns;
-+        var minimumHeight = MathF.Max(0, available.Y - top);
-+        if (Lobby.MinHeight != minimumHeight) Lobby.MinHeight = minimumHeight;
-+        LobbyScroll.Measure(new Vector2(available.X - (right > 0 ? right + 8 : 0), MathF.Max(0, available.Y - top)));
-+        ServerScroll.Measure(new Vector2(wide ? right : available.X, MathF.Max(0, available.Y - MathF.Max(top, ChatHeight + 8))));
++        _tabs.Measure(new Vector2(available.X, 36));
++        var right = wide && ServerScroll.Visible ? Math.Clamp(available.X * 0.38f, 320, 480) : 0;
++        var top = wide ? 0 : 40;
++        var height = MathF.Max(0, available.Y - top - ChatHeight - 8);
++        LobbyScroll.Measure(new Vector2(available.X - (right > 0 ? right + 8 : 0), height));
++        ServerScroll.Measure(new Vector2(wide ? right : available.X, height));
++        Editor.Measure(available);
 +        return Vector2.Zero;
 +    }
 +
 +    protected override Vector2 ArrangeOverride(Vector2 size)
 +    {
-+        var wide = size.X >= 900 && CharacterState?.Visible != true;
-+        var top = wide || CharacterState?.Visible == true ? 0 : 48;
-+        var right = wide && ServerScroll.Visible ? Math.Clamp(size.X * 0.36f, 300, 460) : 0;
-+        _tabs.Arrange(UIBox2.FromDimensions(Vector2.Zero, new Vector2(size.X, 44)));
-+        if (LobbyScroll.Visible) LobbyScroll.Arrange(UIBox2.FromDimensions(new Vector2(0, top),
-+            new Vector2(MathF.Max(0, size.X - (right > 0 ? right + 8 : 0)), MathF.Max(0, size.Y - top))));
-+        var serverTop = MathF.Min(MathF.Max(top, ChatHeight + 8), MathF.Max(top, size.Y - 80));
-+        if (ServerScroll.Visible) ServerScroll.Arrange(UIBox2.FromDimensions(new Vector2(wide ? size.X - right : 0, serverTop),
-+            new Vector2(wide ? right : size.X, MathF.Max(0, size.Y - serverTop))));
++        if (Editor.Visible) { Editor.Arrange(UIBox2.FromDimensions(Vector2.Zero, size)); return size; }
++        var wide = size.X >= 900;
++        var top = wide ? 0 : 40;
++        var right = wide && ServerScroll.Visible ? Math.Clamp(size.X * 0.38f, 320, 480) : 0;
++        var height = MathF.Max(0, size.Y - top - ChatHeight - 8);
++        if (_tabs.Visible) _tabs.Arrange(UIBox2.FromDimensions(Vector2.Zero, new Vector2(size.X, 36)));
++        if (LobbyScroll.Visible) LobbyScroll.Arrange(UIBox2.FromDimensions(new Vector2(0, top), new Vector2(MathF.Max(0, size.X - (right > 0 ? right + 8 : 0)), height)));
++        if (ServerScroll.Visible) ServerScroll.Arrange(UIBox2.FromDimensions(new Vector2(wide ? size.X - right : 0, top), new Vector2(wide ? right : size.X, height)));
 +        return size;
++    }
++}
++
++internal sealed class MobileLobbyServerBinding
++{
++    private readonly List<MobileWidgetSlot> _slots = new();
++    private readonly Control _body;
++    private readonly bool _visible;
++    private readonly Control? _collapse;
++    private readonly bool _collapseVisible;
++    private readonly TabContainer _tabs = new() { Name = "MobileLobbyServerPages" };
++    private readonly Control _preview;
++    private bool _previewPending = true;
++    private long _nextPreview;
++    private readonly object? _preferences;
++    private readonly System.Reflection.PropertyInfo? _preferencesProperty;
++
++    public static MobileLobbyServerBinding? TryCreate(Control source)
++    {
++        var all = MobileServerUiAdapter.Tree(source).ToArray();
++        var help = all.FirstOrDefault(c => c.Name == "AHelpButton");
++        var info = all.FirstOrDefault(c => c.Name == "ServerInfo");
++        var preview = all.FirstOrDefault(c => c.Name == "CharacterPreview");
++        if (info is null || preview is null || help?.Parent is not BoxContainer actions || info.Parent != actions.Parent || preview.Parent != actions.Parent || actions.Parent == null) return null;
++        return new MobileLobbyServerBinding(source, actions, info, preview);
++    }
++
++    private MobileLobbyServerBinding(Control source, BoxContainer actions, Control info, Control preview)
++    {
++        _preview = preview;
++        var contract = preview.GetType().Assembly.GetTypes().FirstOrDefault(t => t.IsInterface && t.Name == "IClientPreferencesManager");
++        if (contract != null)
++        {
++            _preferences = Robust.Shared.IoC.IoCManager.ResolveType(contract);
++            _preferencesProperty = contract.GetProperty("Preferences");
++        }
++        _body = actions.Parent!; _visible = _body.Visible;
++        _collapse = source.Children.FirstOrDefault(c => c.Name == "CollapseButton");
++        _collapseVisible = _collapse?.Visible ?? false;
++        if (_collapse != null) _collapse.Visible = false;
++        var grid = new GridContainer { Name = "MobileLobbyActions", Columns = 2, HSeparationOverride = 6, VSeparationOverride = 6, VerticalAlignment = Control.VAlignment.Top };
++        var actionPage = new Control(); actionPage.AddChild(grid);
++        var infoPage = new ScrollContainer { HScrollEnabled = false };
++        var infoColumn = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical, SeparationOverride = 6 };
++        infoPage.AddChild(infoColumn);
++        var characterPage = new ScrollContainer { HScrollEnabled = false };
++        var actionSlots = actions.Children.Select(c => new MobileWidgetSlot(c)).ToArray();
++        foreach (var slot in actionSlots)
++        {
++            _slots.Add(slot); slot.MoveTo(grid); slot.Source.MinHeight = 40; slot.Source.VerticalExpand = false;
++        }
++        var fields = new[] { info, _body.Children.FirstOrDefault(c => c.Name == "StationTime"), preview }.Where(c => c != null).Cast<Control>().ToArray();
++        var fieldSlots = fields.Select(c => new MobileWidgetSlot(c)).ToArray();
++        foreach (var slot in fieldSlots)
++        {
++            _slots.Add(slot); slot.MoveTo(slot.Source == preview ? characterPage : infoColumn);
++        }
++        _tabs.AddChild(actionPage); _tabs.AddChild(infoPage); _tabs.AddChild(characterPage);
++        _tabs.SetTabTitle(0, Loc.GetString("mobile-lobby-actions"));
++        _tabs.SetTabTitle(1, Loc.GetString("mobile-lobby-info"));
++        _tabs.SetTabTitle(2, Loc.GetString("mobile-lobby-character"));
++        _body.Visible = false; source.AddChild(_tabs);
++    }
++
++    public void RefreshPreview(bool force = false)
++    {
++        if ((!_previewPending && !force) || _preview.Disposed || !_preview.IsInsideTree) return;
++        if (!force && Environment.TickCount64 < _nextPreview) return;
++        _nextPreview = Environment.TickCount64 + 250;
++        var preferences = _preferencesProperty?.GetValue(_preferences);
++        var profile = preferences?.GetType().GetProperty("SelectedCharacter")?.GetValue(preferences);
++        if (profile == null) return;
++        var sprite = MobileServerUiAdapter.Tree(_preview).FirstOrDefault(c => MobileServerUiAdapter.TypeIs(c, "ProfilePreviewSpriteView"));
++        var load = sprite?.GetType().GetMethods().FirstOrDefault(m => m.Name == "LoadPreview" && m.GetParameters().Length == 3 && m.GetParameters()[0].ParameterType.IsInstanceOfType(profile));
++        load?.Invoke(sprite, new[] { profile, null, (object)true });
++        _previewPending = false;
++    }
++
++    public void Restore()
++    {
++        foreach (var slot in _slots) slot.Restore();
++        if (!_body.Disposed) _body.Visible = _visible;
++        if (_collapse is { Disposed: false }) _collapse.Visible = _collapseVisible;
++        _tabs.Parent?.RemoveChild(_tabs); _tabs.Dispose();
 +    }
 +}
 +
@@ -4093,7 +4180,8 @@ index 0000000..9a12c94
 +{
 +    public readonly PanelContainer Heading = new() { Name = "MobileLobbyHeading", StyleClasses = { "BackgroundPanel" } };
 +    public readonly ScrollContainer Actions = new() { Name = "MobileLobbyHomeActions", HScrollEnabled = false };
-+    public readonly ScrollContainer Credits = new() { Name = "MobileLobbyCredits", HScrollEnabled = false };
++    public readonly Control Credits = new() { Name = "MobileLobbyCredits" };
++    private float _headingHeight, _footerHeight;
 +
 +    public MobileLobbyHomePanel()
 +    {
@@ -4104,21 +4192,20 @@ index 0000000..9a12c94
 +
 +    protected override Vector2 MeasureOverride(Vector2 available)
 +    {
-+        var width = MathF.Min(720, available.X - 16);
-+        Heading.Measure(new Vector2(MathF.Max(0, width), 56));
-+        Actions.Measure(new Vector2(MathF.Max(0, width), MathF.Max(0, available.Y - 158)));
-+        Credits.Measure(new Vector2(MathF.Max(0, width), 68));
++        var width = MathF.Max(0, available.X - 8);
++        Heading.Measure(new Vector2(width, float.PositiveInfinity));
++        Credits.Measure(new Vector2(width, float.PositiveInfinity));
++        _headingHeight = Heading.DesiredSize.Y; _footerHeight = Credits.DesiredSize.Y;
++        Actions.Measure(new Vector2(width, MathF.Max(0, available.Y - _headingHeight - _footerHeight - 12)));
 +        return Vector2.Zero;
 +    }
 +
 +    protected override Vector2 ArrangeOverride(Vector2 size)
 +    {
-+        var width = MathF.Max(0, MathF.Min(720, size.X - 16));
-+        var x = (size.X - width) / 2;
-+        var top = size.Y >= 440 ? 48 : 8;
-+        Heading.Arrange(UIBox2.FromDimensions(new Vector2(x, top), new Vector2(width, 48)));
-+        Actions.Arrange(UIBox2.FromDimensions(new Vector2(x, top + 58), new Vector2(width, MathF.Max(0, size.Y - top - 136))));
-+        Credits.Arrange(UIBox2.FromDimensions(new Vector2(x, MathF.Max(top + 58, size.Y - 70)), new Vector2(width, 62)));
++        var width = MathF.Max(0, size.X - 8);
++        Heading.Arrange(UIBox2.FromDimensions(new Vector2(4, 0), new Vector2(width, _headingHeight)));
++        Actions.Arrange(UIBox2.FromDimensions(new Vector2(4, _headingHeight + 6), new Vector2(width, MathF.Max(0, size.Y - _headingHeight - _footerHeight - 12))));
++        Credits.Arrange(UIBox2.FromDimensions(new Vector2(4, MathF.Max(_headingHeight + 6, size.Y - _footerHeight)), new Vector2(width, _footerHeight)));
 +        return size;
 +    }
 +}
@@ -4371,3 +4458,138 @@ index c6b911a..0731419 100644
 -            var headerSize = (int)_enclosingTabHeight;
 +            var headerSize = TabsVisible ? (int)_enclosingTabHeight : 0;
              var panel = _getPanel();
+diff --git a/Robust.Client/UserInterface/Mobile/MobileLateJoinLayout.cs b/Robust.Client/UserInterface/Mobile/MobileLateJoinLayout.cs
+new file mode 100644
+index 0000000..bccc6b1
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileLateJoinLayout.cs
+@@ -0,0 +1,129 @@
++using System;
++using System.Collections.Generic;
++using System.Linq;
++using System.Numerics;
++using Robust.Client.UserInterface.Controls;
++using Robust.Client.UserInterface.CustomControls;
++using Robust.Shared.Localization;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++// Reuse the live JobButtons: availability, locks and SelectedId stay server-owned.
++internal sealed class MobileLateJoinBinding : IMobileScreenBinding
++{
++    public Control Source => _window;
++    private readonly BaseWindow _window;
++    private readonly Vector2 _min, _max, _set, _position;
++    private readonly bool _resizable;
++    private readonly List<DepartmentPage> _pages = new();
++    private readonly Dictionary<Control, Vector2> _buttons = new();
++    private long _nextScan;
++
++    public MobileLateJoinBinding(BaseWindow window)
++    {
++        _window = window; _min = window.MinSize; _max = window.MaxSize; _set = window.SetSize;
++        _position = window.Position; _resizable = window.Resizable;
++        window.MinSize = Vector2.Zero; window.Resizable = false;
++    }
++
++    public void Update(Vector2 viewport, float chatHeight)
++    {
++        var available = _window.Parent?.Size ?? viewport;
++        var size = Vector2.Max(Vector2.One, available - new Vector2(16));
++        if (_window.MaxSize != size) _window.MaxSize = size;
++        if (_window.SetSize != size) _window.SetSize = size;
++        if (_window.Position != new Vector2(8)) LayoutContainer.SetPosition(_window, new Vector2(8));
++        foreach (var page in _pages.ToArray())
++            if (page.Scroll.Disposed || !page.Scroll.IsInsideTree) { page.Restore(); _pages.Remove(page); }
++        if (Environment.TickCount64 >= _nextScan)
++        {
++            _nextScan = Environment.TickCount64 + 250;
++            foreach (var button in _buttons.Keys.Where(c => c.Disposed).ToArray()) _buttons.Remove(button);
++            var all = MobileServerUiAdapter.Tree(_window).ToArray();
++            foreach (var scroll in all.OfType<ScrollContainer>())
++            {
++                if (_pages.Any(p => p.Scroll == scroll) || scroll.Parent is not BoxContainer parent) continue;
++                var list = scroll.Children.OfType<BoxContainer>().FirstOrDefault();
++                if (list == null) continue;
++                var categories = list.Children.Where(c => MobileServerUiAdapter.Tree(c).Any(n => MobileServerUiAdapter.TypeIs(n, "JobButton"))).ToArray();
++                if (categories.Length > 0) _pages.Add(new DepartmentPage(scroll, parent, list, categories));
++            }
++            foreach (var button in all.Where(c => c is BaseButton && (MobileServerUiAdapter.TypeIs(c, "JobButton") || c.Name == "CloseButton")))
++            {
++                if (!_buttons.ContainsKey(button)) _buttons.Add(button, button.MinSize);
++                var minimum = Vector2.Max(button.MinSize, new Vector2(38));
++                if (button.MinSize != minimum) button.MinSize = minimum;
++            }
++        }
++        foreach (var page in _pages) page.Columns(size.X >= 760 ? 2 : 1);
++    }
++
++    public bool OwnsScroll(ScrollContainer scroll)
++    {
++        for (Control? c = scroll; c != null; c = c.Parent) if (c == _window) return true;
++        return _pages.Any(p => p.Selector.OptionsScroll == scroll);
++    }
++
++    public void Restore()
++    {
++        foreach (var page in _pages) page.Restore(); _pages.Clear();
++        foreach (var (button, min) in _buttons) if (!button.Disposed) button.MinSize = min;
++        if (_window.Disposed) return;
++        _window.MinSize = _min; _window.MaxSize = _max; _window.SetSize = _set; _window.Resizable = _resizable;
++        LayoutContainer.SetPosition(_window, _position);
++    }
++
++    private sealed class DepartmentPage
++    {
++        public readonly ScrollContainer Scroll;
++        public readonly OptionButton Selector = new MobileProfileSectionButton { Name = "MobileLateJoinDepartments", MinHeight = 36 };
++        private readonly GridContainer _grid = new() { Name = "MobileLateJoinJobs", Columns = 1, HSeparationOverride = 12, VSeparationOverride = 6 };
++        private readonly List<(MobileWidgetSlot Slot, bool Visible)> _slots = new();
++        private readonly List<(Label Label, bool Clip, bool Expand)> _labels = new();
++
++        public DepartmentPage(ScrollContainer scroll, BoxContainer parent, BoxContainer list, Control[] categories)
++        {
++            Scroll = scroll;
++            var index = scroll.GetPositionInParent();
++            parent.AddChild(Selector); Selector.SetPositionInParent(index);
++            Selector.AddItem(Loc.GetString("mobile-latejoin-all"), 0);
++            foreach (var category in categories)
++            {
++                _slots.Add((new MobileWidgetSlot(category), category.Visible));
++                var heading = MobileServerUiAdapter.Tree(category).OfType<Label>().FirstOrDefault();
++                Selector.AddItem(heading?.Text ?? category.Name ?? "", _slots.Count);
++                foreach (var label in MobileServerUiAdapter.Tree(category).OfType<Label>())
++                {
++                    _labels.Add((label, label.ClipText, label.HorizontalExpand));
++                    label.ClipText = true; label.HorizontalExpand = true;
++                }
++            }
++            foreach (var (slot, _) in _slots) { slot.MoveTo(_grid); slot.Source.VerticalAlignment = Control.VAlignment.Top; slot.Source.VerticalExpand = false; }
++            list.AddChild(_grid);
++            Selector.SelectId(0);
++            Selector.OnItemSelected += e =>
++            {
++                Selector.SelectId(e.Id);
++                for (var i = 0; i < _slots.Count; i++) _slots[i].Slot.Source.Visible = _slots[i].Visible && (e.Id == 0 || e.Id == i + 1);
++                Scroll.VScrollTarget = 0;
++            };
++        }
++
++        public void Columns(int columns)
++        {
++            var count = _slots.Count(s => s.Slot.Source.Visible) > 1 ? columns : 1;
++            if (_grid.Columns != count) _grid.Columns = count;
++        }
++        public void Restore()
++        {
++            foreach (var (label, clip, expand) in _labels)
++                if (!label.Disposed) { label.ClipText = clip; label.HorizontalExpand = expand; }
++            foreach (var (slot, visible) in _slots)
++            {
++                slot.Restore(); if (!slot.Source.Disposed) slot.Source.Visible = visible;
++            }
++            _grid.Parent?.RemoveChild(_grid); _grid.Dispose(); Selector.Parent?.RemoveChild(Selector); Selector.Dispose();
++        }
++    }
++}

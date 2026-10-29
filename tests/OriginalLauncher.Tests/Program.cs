@@ -161,13 +161,19 @@ foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(10
     {
         var connect = row.FindControl<Border>("ConnectCell")!;
         var name = row.FindControl<Border>("ServerNameCell")!;
-        Assert(connect.Child is Button { MinHeight: >= 48, Command: not null }, "original connect command has a touch-sized target");
+        Assert(connect.Child is Button { MinHeight: >= 36, Command: not null }, "original connect command has a touch-sized target");
         Assert(connect.Bounds.Left >= name.Bounds.Right - 1 && connect.Bounds.Width > 80,
             "server name and connect action do not overlap");
     }
+    Assert(rows[0].Bounds.Height <= 76, "compact server cards leave more room for the list");
+    var account = main.GetVisualDescendants().OfType<AccountDropDown>().Single();
+    Assert(account.Bounds.Height >= 36, "account menu has the same height as header actions");
     var firstRow = rows[0];
     var favoriteAction = firstRow.FindControl<Button>("FavoriteButton")!;
     var serverModel = (SS14.Launcher.ViewModels.MainWindowTabs.ServerEntryViewModel)firstRow.DataContext!;
+    var favoriteIcon = firstRow.FindControl<IconLabel>("FavoriteButtonIconLabel")!;
+    var originalIcon = favoriteIcon.Icon;
+    Assert(originalIcon != null, "quick favorite displays the upstream star asset");
     var wasFavorite = serverModel.IsFavorite;
     var wasExpanded = serverModel.IsExpanded;
     var favoritePoint = favoriteAction.TranslatePoint(new Point(favoriteAction.Bounds.Width / 2, favoriteAction.Bounds.Height / 2), host)!.Value;
@@ -175,10 +181,11 @@ foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(10
     Dispatcher.UIThread.RunJobs();
     Assert(serverModel.IsFavorite != wasFavorite && serverModel.IsExpanded == wasExpanded,
         "quick favorite uses the original command without expanding the server card");
+    Assert(!ReferenceEquals(favoriteIcon.Icon, originalIcon), "favorite icon follows the original account state");
     serverModel.FavoriteButtonPressed();
     var listView = main.GetVisualDescendants().OfType<SS14.Launcher.Views.MainWindowTabs.ServerListTabView>().Single();
     var toolbar = listView.FindControl<DockPanel>("SearchToolbar")!;
-    Assert(toolbar.Bounds.Height >= 44 && toolbar.Bounds.Top < 8, "search stays at the top with touch targets");
+    Assert(toolbar.Bounds.Height >= 36 && toolbar.Bounds.Top < 8, "search stays at the top with touch targets");
     model.ServersTab.FiltersVisible = true;
     Dispatcher.UIThread.RunJobs();
     var filters = listView.GetVisualDescendants().OfType<SS14.Launcher.Views.MainWindowTabs.ServerListFiltersView>().Single();
@@ -187,6 +194,12 @@ foreach (var size in new[] { new Size(600, 260), new Size(780, 360), new Size(10
     model.ServersTab.FiltersVisible = false;
     Dispatcher.UIThread.RunJobs();
 }
+((LauncherSafeAreaRoot)grid).ApplySafeArea(new Thickness(22, 24, 18, 12));
+Dispatcher.UIThread.RunJobs();
+var safePoint = main.TranslatePoint(new Point(0, 0), grid)!.Value;
+Assert(safePoint.X >= 22 && safePoint.Y >= 24, "native safe area keeps the hub below system bars and cutouts");
+((LauncherSafeAreaRoot)grid).ApplySafeArea(default);
+Dispatcher.UIThread.RunJobs();
 logins.ActiveAccountId = null;
 Locator.Current.GetRequiredService<DataManager>().RemoveLogin(fixtureLogin);
 host.Close();

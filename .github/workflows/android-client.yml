@@ -23,7 +23,7 @@ on:
       version_code:
         description: Android package version code
         type: string
-        default: '12'
+        default: '13'
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SS14_ANDROID_ABI: ${{ inputs.rid == 'android-x64' && 'x86_64' || 'arm64-v8a' }}
-      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '10' }}
+      SS14_APK_VERSION_CODE: ${{ inputs.version_code || '13' }}
     steps:
       - uses: actions/checkout@v4
         with:
